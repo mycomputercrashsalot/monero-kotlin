@@ -172,6 +172,16 @@ docker compose -f external/monero-c/tests/c/integration/docker-compose.yml down 
 
 The node is expected at `http://127.0.0.1:18081`: set the environment variable `MONERO_C_TEST_DAEMON_URI` for another one.
 
+The lws models have an integration test of their own, which needs a monero-lws behind a regtest node. monero-c runs none, so the `docker-compose.yml` of this repository does, pinned to the commit of the captures in [src/test/resources/fixtures/lws](src/test/resources/fixtures/lws):
+
+```sh
+docker compose -f src/test/integration/docker-compose.yml up -d
+./gradlew integrationTest --rerun
+docker compose -f src/test/integration/docker-compose.yml down
+```
+
+The server is expected at `http://127.0.0.1:8443`: set the environment variable `MONERO_KOTLIN_TEST_LWS_URI` for another one. The test skips when no server answers, so continuous integration, which does not start the compose yet, stays green without it. Its database lives in the container, so `down` makes the next `up` a fresh one, which the test needs: it asserts the responses of an account that no block was mined to yet.
+
 To get the coverage of the library:
 
 ```sh
