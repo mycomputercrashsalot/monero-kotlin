@@ -1,6 +1,7 @@
 package monero.wallet
 
 import org.junit.jupiter.api.Tag
+import java.math.BigInteger
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,6 +12,8 @@ import monero.NativeTestSupport
 import monero.common.MoneroError
 import monero.common.MoneroRpcConnection
 import monero.daemon.model.MoneroNetworkType
+import monero.wallet.model.MoneroDestination
+import monero.wallet.model.MoneroTxConfig
 import monero.wallet.model.MoneroWalletConfig
 
 /**
@@ -115,6 +118,33 @@ class MoneroWalletLightTest {
         assertEquals("Must provide both primary address and private view key to check if wallet exists", error.message)
     }
 
+    // ------------------------------- SEND ----------------------------------
+
+    @Test
+    fun createTxs_WithoutAServer_IsAnError() {
+        val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
+        try {
+            val txConfig = MoneroTxConfig()
+            txConfig.accountIndex = 0
+            txConfig.destinations = listOf(MoneroDestination("48W9YHwPzRz9aPTeXCA6kmSpW6HsvmWx578jj3of2gT3JwZzwTf33amESBoNDkL6SVK34Q2HTKqgYbGyE1hBws3wCrcBDR2", BigInteger.ONE))
+            val error = assertFailsWith<MoneroError> { wallet.createTxs(txConfig) }
+            assertEquals("Wallet is not connected to daemon", error.message)
+        } finally {
+            wallet.close()
+        }
+    }
+
+    @Test
+    fun relayTx_WithMetadataThatIsNotHex_IsAnError() {
+        val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
+        try {
+            val error = assertFailsWith<MoneroError> { wallet.relayTx("this is not hex") }
+            assertEquals("Failed to parse hex", error.message)
+        } finally {
+            wallet.close()
+        }
+    }
+
     // ------------------------------- SYNC AND LIFECYCLE ----------------------------------
 
     @Test
@@ -149,6 +179,10 @@ class MoneroWalletLightTest {
         assertEquals("Wallet is closed", closed.message)
         val closedSync = assertFailsWith<MoneroError> { wallet.sync() }
         assertEquals("Wallet is closed", closedSync.message)
+        val closedCreate = assertFailsWith<MoneroError> { wallet.createTxs(MoneroTxConfig()) }
+        assertEquals("Wallet is closed", closedCreate.message)
+        val closedRelay = assertFailsWith<MoneroError> { wallet.relayTx("") }
+        assertEquals("Wallet is closed", closedRelay.message)
 
         wallet.close()
         assertTrue(wallet.isClosed())
