@@ -30,7 +30,7 @@ import org.junit.jupiter.api.io.TempDir
  * docker-compose.yml of monero-c, and they move its chain: they mine to the wallets that they create, and pay with
  * what they mine. What they assert about the chain is relative to the chain that they find.
  */
-@Order(2)
+@Order(3)
 @Tag("integration")
 class MoneroWalletFullIntegrationTest {
 
