@@ -30,6 +30,7 @@ class MoneroWalletLightTest {
     @BeforeTest
     fun requireLibrary() {
         NativeTestSupport.assumeAvailable()
+        NativeTestSupport.assumeLightWalletAvailable()
     }
 
     // ------------------------------- CREATE WALLET ----------------------------------
