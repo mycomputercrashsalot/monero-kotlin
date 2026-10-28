@@ -4,6 +4,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.math.BigInteger
 import java.time.Duration
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -53,7 +54,7 @@ class MoneroWalletLightIntegrationTest {
         "35184204316927",
         "35184137208383",
         "35184070099967"
-    ).map { it.toLong() }.sum()
+    ).map { BigInteger(it) }.fold(BigInteger.ZERO, BigInteger::add)
 
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
     private val connection: MoneroRpcConnection by lazy { MoneroRpcConnection(lwsUri) }
@@ -100,7 +101,7 @@ class MoneroWalletLightIntegrationTest {
             assertNotNull(sync.receivedMoney, "the sync result says whether money was received")
             assertEquals(6L, wallet.getHeight())
             assertEquals(rewards, wallet.getBalance())
-            assertEquals(0L, wallet.getUnlockedBalance())
+            assertEquals(BigInteger.ZERO, wallet.getUnlockedBalance())
             assertEquals(0L, wallet.getUnrefinedSpendCount())
 
             // the five coinbase transactions of the blocks are in the wallet

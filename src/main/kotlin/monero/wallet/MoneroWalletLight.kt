@@ -6,6 +6,7 @@ import com.sun.jna.ptr.ByteByReference
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.LongByReference
 import com.sun.jna.ptr.PointerByReference
+import java.math.BigInteger
 import monero.common.MoneroError
 import monero.common.MoneroJson
 import monero.common.MoneroRpcConnection
@@ -139,12 +140,12 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * @return the balance in atomic units
      * @throws MoneroError if the wallet is closed
      */
-    fun getBalance(): Long {
+    fun getBalance(): BigInteger {
         checkNotClosed()
         return run { lib, h ->
             val balance = LongByReference()
             MoneroNative.ok(lib.monero_wallet_get_balance(h, balance))
-            balance.value
+            MoneroNative.unsigned(balance.value)
         }
     }
 
@@ -155,12 +156,12 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * @return the unlocked balance in atomic units
      * @throws MoneroError if the wallet is closed
      */
-    fun getUnlockedBalance(): Long {
+    fun getUnlockedBalance(): BigInteger {
         checkNotClosed()
         return run { lib, h ->
             val balance = LongByReference()
             MoneroNative.ok(lib.monero_wallet_get_unlocked_balance(h, balance))
-            balance.value
+            MoneroNative.unsigned(balance.value)
         }
     }
 
