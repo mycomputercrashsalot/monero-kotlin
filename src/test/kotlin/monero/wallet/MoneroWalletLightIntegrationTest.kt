@@ -171,7 +171,7 @@ class MoneroWalletLightIntegrationTest {
         val deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos()
         while (true) {
             val info = post(lwsUri, "/get_address_info", """{"address":"$address","view_key":"$viewKey"}""")
-            val scanned = Regex("\"scanned_block_height\":([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
+            val scanned = Regex("\"scanned_block_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
             if (scanned == height) return
             if (System.nanoTime() >= deadline) throw MoneroError("the scan never reached height $height, it is at $scanned: $info")
             Thread.sleep(500)

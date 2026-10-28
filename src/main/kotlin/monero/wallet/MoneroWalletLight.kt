@@ -33,6 +33,7 @@ import monero.wallet.model.MoneroWalletConfig
  * The calls of a wallet run one after the other on a thread of their own, since the C ABI allows one thread per
  * wallet handle (monero_c_wallet.h:49-53).
  */
+@Suppress("TooManyFunctions")
 class MoneroWalletLight private constructor(private val handle: Pointer) : AutoCloseable {
 
     private val worker = NativeWorker("MoneroWalletLight", "Wallet is closed")
@@ -68,6 +69,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * @throws MoneroError if the native library fails
      */
     fun getSeedLanguages(): List<String> {
+        checkNotClosed()
         return run { lib, _ ->
             val out = PointerByReference()
             MoneroNative.strings(lib.monero_wallet_get_seed_languages(out), out)
@@ -179,7 +181,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         return run { lib, h ->
             val out = PointerByReference()
             val result = MoneroNative.json(lib.monero_wallet_get_txs(h, query?.let { MoneroJson.serialize(it) }, out), out, MoneroWalletBlocksResult::class.java)
-            result.blocks.orEmpty().flatMap { block -> block.getTxsWallet() }
+            result.getTxs()
         }
     }
 
@@ -338,6 +340,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
          * @throws MoneroError if the configuration is invalid, or the server does not answer
          */
         fun walletExists(config: MoneroWalletConfig, connection: MoneroRpcConnection): Boolean {
+            requireNetworkType(config)
             val lib = MoneroNative.lib
             val conn = PointerByReference()
             MoneroNative.ok(lib.monero_rpc_connection_create(MoneroJson.serialize(connection), conn))
