@@ -33,7 +33,6 @@ import monero.wallet.model.MoneroWalletConfig
  * The calls of a wallet run one after the other on a thread of their own, since the C ABI allows one thread per
  * wallet handle (monero_c_wallet.h:49-53).
  */
-@Suppress("TooManyFunctions")
 class MoneroWalletLight private constructor(private val handle: Pointer) : AutoCloseable {
 
     private val worker = NativeWorker("MoneroWalletLight", "Wallet is closed")
