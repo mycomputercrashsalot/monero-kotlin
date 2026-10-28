@@ -1,6 +1,6 @@
 # regtest monerod and monero-lws for the integration tests of the lws models. monerod is the same image as the
-# docker-compose.yml of monero-c, but with the zmq of the lws daemon on; monero-lws is pinned to the commit of the
-# captures in src/test/resources/fixtures/lws, so what it answers is what the tests expect. the lws database lives in
+# docker-compose.yml of monero-c, but with the zmq of the lws daemon on; monero-lws is pinned to the commit that
+# the captured responses of the tests come from, so what it answers is what the tests expect. the lws database lives in
 # the container: docker compose down makes the next up a fresh one, which the tests need, since they assert the
 # responses of an account that no block was mined to yet
 services:

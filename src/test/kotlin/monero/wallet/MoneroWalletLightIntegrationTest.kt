@@ -29,7 +29,12 @@ import org.junit.jupiter.api.Tag
  * the import flag, an admin has to accept the import with monero-lws-admin. Set the environment variable
  * MONERO_KOTLIN_TEST_LWS_URI to the URI of the server when it is not the one of that file; the node it mines on is
  * the one of MONERO_C_TEST_DAEMON_URI. The test skips when no server answers, like the unit tests skip without
- * monero-c, which this test also needs.
+ * monero-c, which this test also needs, and when the library has no light wallet surface.
+ *
+ * The test asserts that no account exists for the address yet, so it needs a fresh database, which a `down` of the
+ * compose gives, and it must run before any test that mines to the account or registers it. The integration tests
+ * run in class name order (junit-platform.properties), which puts this class first; a test that mines and sorts
+ * before it breaks this one with the timeout of the scan wait.
  */
 @Tag("integration")
 class MoneroWalletLightIntegrationTest {
@@ -56,6 +61,7 @@ class MoneroWalletLightIntegrationTest {
     @BeforeTest
     fun requireLibraryAndServer() {
         NativeTestSupport.assumeAvailable()
+        NativeTestSupport.assumeLightWalletAvailable()
         assumeTrue(isServerUp, "no monero-lws at $lwsUri: start the compose of src/test/integration, or set MONERO_KOTLIN_TEST_LWS_URI")
     }
 

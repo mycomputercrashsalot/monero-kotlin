@@ -125,6 +125,17 @@ jobs:
           wait_for 18081 rpc_daemon_user:abc123 get_block_count '"count"'
           for port in 18082 18083 18084; do wait_for "$port" rpc_user:abc123 get_version '"version"'; done
 
+      # monero-lws answers only after it has scanned the chain of the node, which takes about a minute after it starts
+      - name: Wait for monero-lws
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -m 5 -X POST "$MONERO_KOTLIN_TEST_LWS_URI/get_version" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "monero-lws did not answer"; exit 1
+
       # --fail-if-no-tests: a run that finds no integration test would pass without testing anything
       - name: Run the integration tests
         env:
@@ -184,5 +195,118 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-test-results
+          path: test-results
+          if-no-files-found: ignore
+
+  light:
+    name: Light wallet integration tests, Linux x86_64 (regtest node and monero-lws)
+    needs: wait-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      MONERO_C_TEST_DAEMON_URI: http://127.0.0.1:18081
+      MONERO_KOTLIN_TEST_LWS_URI: http://127.0.0.1:8443
+      COMPOSE_FILE: src/test/integration/docker-compose.yml
+
+    steps:
+      # only monero-c, for its docker-compose.yml: the submodules of monero-c are not needed
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Download the tests
+        uses: actions/download-artifact@v8
+        with:
+          name: monero-kotlin-tests
+          path: unit-tests
+          run-id: ${{ needs.wait-build.outputs.build-run-id }}
+          github-token: ${{ github.token }}
+
+      # the library, with the libusb that it needs next to it
+      - name: Download monero-c
+        uses: actions/download-artifact@v8
+        with:
+          name: monero-c-linux-x86_64
+          path: monero-c
+          run-id: ${{ needs.wait-build.outputs.native-run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Set the library of monero-c
+        run: |
+          if [ ! -f monero-c/libmonero_c.so ]; then echo "the build of monero-c has no libmonero_c.so"; ls monero-c; exit 1; fi
+          ldd_out=$(ldd monero-c/libmonero_c.so || true)
+          if grep -q 'not found' <<< "$ldd_out"; then
+            echo "$ldd_out"
+            echo "missing runtime libraries above"; exit 1
+          fi
+          echo "MONERO_C_LIBRARY=$PWD/monero-c/libmonero_c.so" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # the node starts alone first: the header of the compose file says why an lws that starts against a node
+      # that is still initializing locks a wrong chain height and never scans
+      - name: Start the regtest monerod
+        run: docker compose up -d node
+
+      - name: Wait for monerod
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -m 5 -X POST "$MONERO_C_TEST_DAEMON_URI/json_rpc" -d '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}' | grep -q '"count"'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "monerod did not answer"; exit 1
+
+      - name: Start the monero-lws
+        run: docker compose up -d lws
+
+      # monero-lws answers only after it has scanned the chain of the node, which takes about a minute after it starts
+      - name: Wait for monero-lws
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -m 5 -X POST "$MONERO_KOTLIN_TEST_LWS_URI/get_version" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "monero-lws did not answer"; exit 1
+
+      # the light wallet tests need the light functions of monero-c, which the submodule of this branch carries
+      # through its fork: they skip with a message when the library has no light wallet
+      - name: Run the light wallet integration tests
+        env:
+          # the logs of the tests go in the results that are uploaded
+          MONERO_KOTLIN_TEST_LOG_DIR: test-results/logs
+        run: >
+          java -cp "unit-tests/lib/*" org.junit.platform.console.ConsoleLauncher execute
+          --disable-banner --details=summary
+          --fail-if-no-tests
+          --class-path unit-tests/classes/main
+          --class-path unit-tests/classes/test
+          --class-path unit-tests/resources/test
+          --select-class monero.wallet.MoneroWalletLightIntegrationTest
+          --select-class monero.wallet.MoneroWalletSendIntegrationTest
+          --reports-dir test-results
+
+      - name: Show the logs of the node and the server
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop the regtest node and the server
+        if: always()
+        run: docker compose down -v
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: light-integration-test-results
           path: test-results
           if-no-files-found: ignore
