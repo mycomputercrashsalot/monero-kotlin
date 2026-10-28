@@ -4,6 +4,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.io.IOException
 import java.math.BigInteger
 import java.time.Duration
 import kotlin.test.AfterTest
@@ -140,7 +141,11 @@ class MoneroWalletLightIntegrationTest {
             try {
                 post(lwsUri, "/get_version", "{}")
                 true
-            } catch (e: Exception) {
+            } catch (e: IOException) {
+                Thread.sleep(1000)
+                false
+            } catch (e: MoneroError) {
+                // the rest server answers before monero-lws is ready, so a request it refuses is the server not being up yet
                 Thread.sleep(1000)
                 false
             }
