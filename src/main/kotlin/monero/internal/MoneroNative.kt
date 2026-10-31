@@ -109,6 +109,22 @@ internal object MoneroNative {
     }
 
     /**
+     * Read the text that a call returned in a native string, and overwrite and free the native string, which a
+     * secret is: the seed, the private keys and the transaction keys (monero_c_utils.h:151).
+     *
+     * @return the text, or null if the call had no result
+     */
+    fun secret(result: Int, out: PointerByReference): String? {
+        ok(result)
+        val ptr = out.value ?: return null
+        try {
+            return ptr.getString(0, ENCODING)
+        } finally {
+            lib.monero_utils_free_secret(ptr)
+        }
+    }
+
+    /**
      * Read the JSON that a call returned in a native string as a model, and free the native string.
      */
     fun <T> json(result: Int, out: PointerByReference, type: Class<T>): T {

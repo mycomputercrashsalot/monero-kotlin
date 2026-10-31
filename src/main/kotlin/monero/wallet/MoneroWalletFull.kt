@@ -67,7 +67,7 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
      * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed (monero_c_wallet.h:342)
      */
     fun getSeed(): String {
-        return string { lib, h, out -> lib.monero_wallet_get_seed(h, out) }
+        return secret { lib, h, out -> lib.monero_wallet_get_seed(h, out) }
     }
 
     /**
@@ -102,7 +102,7 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
      * @throws MoneroError if the wallet is closed (monero_c_wallet.h:369)
      */
     fun getPrivateViewKey(): String {
-        return string { lib, h, out -> lib.monero_wallet_get_private_view_key(h, out) }
+        return secret { lib, h, out -> lib.monero_wallet_get_private_view_key(h, out) }
     }
 
     /**
@@ -112,7 +112,7 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
      * @throws MoneroError if the wallet is closed, or it is view-only, which has no spend key (monero_c_wallet.h:378)
      */
     fun getPrivateSpendKey(): String {
-        return string { lib, h, out -> lib.monero_wallet_get_private_spend_key(h, out) }
+        return secret { lib, h, out -> lib.monero_wallet_get_private_spend_key(h, out) }
     }
 
     /**
@@ -320,6 +320,7 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
      *
      * @throws MoneroError if the wallet is closed
      */
+
     fun stopSyncing() {
         checkNotClosed()
         run { lib, h -> MoneroNative.ok(lib.monero_wallet_stop_syncing(h)) }
@@ -905,6 +906,18 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
         return run { lib, h ->
             val out = PointerByReference()
             MoneroNative.text(call(lib, h, out), out) ?: throw MoneroError("monero-c returned no string")
+        }
+    }
+
+    /**
+     * Call the c abi for a secret of the wallet, which it wipes when it frees the string: the seed and the private
+     * keys.
+     */
+    private fun secret(call: (MoneroC, Pointer, PointerByReference) -> Int): String {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.secret(call(lib, h, out), out) ?: throw MoneroError("monero-c returned no string")
         }
     }
 
