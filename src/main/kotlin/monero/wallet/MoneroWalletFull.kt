@@ -320,6 +320,24 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
      *
      * @throws MoneroError if the wallet is closed
      */
+    /**
+     * Wait until the next block is added to the chain, for at most a number of milliseconds (monero_c_wallet.h:1104).
+     * The wallet must be syncing in the background, and a caller that waits in a loop can be cancelled between the
+     * waits, which the wait without a timeout can not.
+     *
+     * @param timeoutMs is the longest time to wait, from 1 to 2147483647
+     * @return the height of the block, or null if no block arrived in the time
+     * @throws MoneroError if the wallet is closed, or it can not be listened to
+     */
+    fun waitForNextBlock(timeoutMs: Int): Long? {
+        checkNotClosed()
+        return run { lib, h ->
+            val height = LongByReference()
+            val timedOut = ByteByReference()
+            MoneroNative.ok(lib.monero_wallet_wait_for_next_block_timeout(h, timeoutMs, height, timedOut))
+            if (timedOut.value.toInt() != 0) null else height.value
+        }
+    }
 
     fun stopSyncing() {
         checkNotClosed()

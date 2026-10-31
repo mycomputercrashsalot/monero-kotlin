@@ -295,6 +295,22 @@ class MoneroDaemonRpc(rpc: MoneroRpcConnection) : MoneroDaemonDefault(), AutoClo
         return json { lib, h, out -> lib.monero_daemon_get_block_header_by_height(h, height, out) }
     }
 
+    /**
+     * Wait until the next block is added to the chain, for at most a number of milliseconds (monero_c_daemon.h:552).
+     * A wallet that waits in a loop can be cancelled between the waits, which the wait without a timeout can not.
+     *
+     * @param timeoutMs is the longest time to wait, from 1 to 2147483647
+     * @return the header of the block, or null if no block arrived in the time
+     * @throws MoneroError if the daemon is closed
+     */
+    fun waitForNextBlockHeader(timeoutMs: Int): MoneroBlockHeader? {
+        val out = PointerByReference()
+        val timedOut = ByteByReference()
+        MoneroNative.ok(MoneroNative.lib.monero_daemon_wait_for_next_block_header_timeout(handle, timeoutMs, out, timedOut))
+        if (timedOut.value.toInt() != 0) return null
+        return MoneroNative.json(0, out, MoneroBlockHeader::class.java)
+    }
+
     override fun getBlockHeadersByRange(startHeight: Long, endHeight: Long): List<MoneroBlockHeader> {
         return json { lib, h, out -> lib.monero_daemon_get_block_headers_by_range(h, startHeight, endHeight, out) }
     }

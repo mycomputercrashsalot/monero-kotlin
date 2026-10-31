@@ -99,6 +99,8 @@ internal interface MoneroC : Library {
 
     fun monero_daemon_set_poll_period(daemon: Pointer, periodMs: Long): Int
 
+    fun monero_daemon_wait_for_next_block_header_timeout(daemon: Pointer, timeoutMs: Int, outJson: PointerByReference, outTimedOut: ByteByReference): Int
+
     fun monero_daemon_listener_create(callbacks: DaemonListenerCallbacks, out: PointerByReference): Int
 
     fun monero_daemon_listener_free(listener: Pointer?)
@@ -334,6 +336,8 @@ internal interface MoneroC : Library {
     fun monero_wallet_get_unlocked_balance(wallet: Pointer, balance: LongByReference): Int
 
     fun monero_wallet_sync(wallet: Pointer, startHeight: LongByReference?, listener: Pointer?, json: PointerByReference): Int
+
+    fun monero_wallet_wait_for_next_block_timeout(wallet: Pointer, timeoutMs: Int, outHeight: LongByReference, outTimedOut: ByteByReference): Int
 
     fun monero_wallet_get_txs(wallet: Pointer, queryJson: String?, json: PointerByReference): Int
 
