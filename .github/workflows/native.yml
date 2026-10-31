@@ -249,9 +249,29 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         working-directory: external/monero-c
         run: |
-          HOMEBREW_NO_AUTO_UPDATE=1 brew install libsodium openssl zmq libpgm miniupnpc expat libunwind-headers protobuf unbound libevent libnghttp2
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install libsodium openssl@3 zmq libpgm miniupnpc expat libunwind-headers protobuf libevent libnghttp2
+          # openssl is openssl@4 on newer images, which Boost.Asio does not build with, and monero-project and monero-cpp take the prefix of openssl
+          # from brew unless it is given (build-macos.yml of monero-c)
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          # the newer images also link openssl@4 into brew's prefix, so its headers come before the ones of openssl@3 when another library puts
+          # the prefix in the include path: unlink it
+          brew unlink openssl@4 || true
           # record versions of the brew libraries that get statically linked into the shipped binary
           brew list --versions | sort
+
+      - name: Install unbound
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: external/monero-c
+        run: |
+          # the unbound of brew is built with openssl@4 and needs symbols that openssl@3 does not have, so build it, as on Linux, with openssl@3
+          # (build-macos.yml of monero-c)
+          curl --retry 5 --retry-delay 5 --retry-max-time 150 -fsSLO https://www.nlnetlabs.nl/downloads/unbound/unbound-1.22.0.tar.gz
+          echo "c5dd1bdef5d5685b2cedb749158dd152c52d44f65529a34ac15cd88d4b1b3d43  unbound-1.22.0.tar.gz" | shasum -a 256 -c
+          tar xzf unbound-1.22.0.tar.gz
+          cd unbound-1.22.0
+          ./configure --prefix="$(brew --prefix)" --with-libexpat="$(brew --prefix expat)" --with-ssl="$OPENSSL_ROOT_DIR" --enable-static --disable-shared --with-pic
+          make -j3
+          sudo make install
 
       - name: Install libusb 1.0.27
         if: steps.cache.outputs.cache-hit != 'true'
@@ -299,7 +319,7 @@ jobs:
           cd external/monero-cpp/external/monero-project
           mkdir -p build/release
           cd build/release
-          cmake -DSTATIC=ON -DBUILD_64=ON -DARCH="${{ matrix.march }}" -DCMAKE_BUILD_TYPE=Release -DUSE_DEVICE_TREZOR=OFF ../../
+          cmake -DSTATIC=ON -DBUILD_64=ON -DARCH="${{ matrix.march }}" -DCMAKE_BUILD_TYPE=Release -DUSE_DEVICE_TREZOR=OFF -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" ../../
           make -j3 wallet cryptonote_protocol
           cd ../../../../../../
 
@@ -310,7 +330,7 @@ jobs:
           cd external/monero-cpp
           mkdir -p build
           cd build
-          cmake -DBUILD_LIBRARY=ON -DBUILD_SAMPLE=OFF -DBUILD_SCRATCHPAD=OFF -DBUILD_TESTS=OFF -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON ..
+          cmake -DBUILD_LIBRARY=ON -DBUILD_SAMPLE=OFF -DBUILD_SCRATCHPAD=OFF -DBUILD_TESTS=OFF -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" ..
           cmake --build . --target monero-cpp-static -j3
           cd ../../..
 
@@ -320,7 +340,7 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake -DBUILD_TESTS=OFF -DMONERO_C_STATIC_DEPENDENCIES=ON -DMONERO_C_LIBUSB_SHARED_LIBRARY:FILEPATH=/usr/local/lib/libusb-1.0.0.dylib -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON ..
+          cmake -DBUILD_TESTS=OFF -DMONERO_C_STATIC_DEPENDENCIES=ON -DMONERO_C_LIBUSB_SHARED_LIBRARY:FILEPATH=/usr/local/lib/libusb-1.0.0.dylib -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" ..
           grep -Fxq 'MONERO_C_LIBUSB_SHARED_LIBRARY:FILEPATH=/usr/local/lib/libusb-1.0.0.dylib' CMakeCache.txt
           cmake --build . -j3
           cd ..
