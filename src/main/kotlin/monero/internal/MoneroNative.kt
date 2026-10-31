@@ -30,11 +30,11 @@ internal object MoneroNative {
     const val LIBRARY_ENVIRONMENT = "MONERO_C_LIBRARY"
 
     /**
-     * The version of the C ABI that this code was written for. While the major version is 0, a different minor version
-     * can break the callers.
+     * The version of the C ABI that this code was written for. The minor version grows when functions are added, and
+     * a library with a greater one has everything that this code calls, so it is the minimum, not the exact version.
      */
     const val ABI_MAJOR = 0
-    const val ABI_MINOR = 1
+    const val ABI_MINOR = 3
 
     private const val ENCODING = "UTF-8"
 
@@ -77,8 +77,8 @@ internal object MoneroNative {
         } catch (e: UnsatisfiedLinkError) {
             throw MoneroError("The native library monero_c is too old: it has no version of its ABI", e)
         }
-        if (major.value != ABI_MAJOR || minor.value != ABI_MINOR) {
-            throw MoneroError("The version of the ABI of monero-c is ${major.value}.${minor.value}.${patch.value}, and $ABI_MAJOR.$ABI_MINOR.x is needed")
+        if (major.value != ABI_MAJOR || minor.value < ABI_MINOR) {
+            throw MoneroError("The version of the ABI of monero-c is ${major.value}.${minor.value}.${patch.value}, and $ABI_MAJOR.$ABI_MINOR.x or newer is needed")
         }
     }
 
