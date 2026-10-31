@@ -35,6 +35,7 @@ internal class DaemonEvents(private val onBlockHeader: (MoneroBlockHeader) -> Un
 
     init {
         val callbacks = DaemonListenerCallbacks()
+        callbacks.structSize = callbacks.size()
         callbacks.onBlockHeader = callback
         val out = PointerByReference()
         MoneroNative.ok(MoneroNative.lib.monero_daemon_listener_create(callbacks, out))
