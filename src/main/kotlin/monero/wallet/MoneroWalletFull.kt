@@ -82,17 +82,16 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
 
     /**
      * Get the languages that a seed can be written in. The call needs no wallet, since monero-c has the list of the
-     * languages itself (monero_c_wallet.h:246).
+     * languages itself, so it runs on the thread of the caller and works on a closed wallet
+     * (monero_c_wallet.h:246).
      *
      * @return the names of the languages
      * @throws MoneroError if the native library fails
      */
     fun getSeedLanguages(): List<String> {
-        checkNotClosed()
-        return run { lib, _ ->
-            val out = PointerByReference()
-            MoneroNative.strings(lib.monero_wallet_get_seed_languages(out), out)
-        }
+        val lib = MoneroNative.lib
+        val out = PointerByReference()
+        return MoneroNative.strings(lib.monero_wallet_get_seed_languages(out), out)
     }
 
     /**
@@ -1036,7 +1035,8 @@ class MoneroWalletFull private constructor(private val handle: Pointer) : AutoCl
         }
 
         /**
-         * Check if a wallet is at a path. It looks for the keys file, path + ".keys" (monero_c_wallet.h:239).
+         * Check if a wallet is at a path. It looks for the keys file, path + ".keys" (monero_c_wallet.h:239). The
+         * call needs no wallet, so it runs on the thread of the caller: there is no worker to order it.
          *
          * @param path is the path of the wallet file
          * @return true if the wallet exists, false otherwise
