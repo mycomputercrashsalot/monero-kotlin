@@ -20,6 +20,7 @@ import monero.common.MoneroRpcConnection
 import monero.daemon.model.MoneroNetworkType
 import monero.wallet.model.MoneroWalletConfig
 import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Tag
 
 /**
@@ -38,6 +39,7 @@ import org.junit.jupiter.api.Tag
  * run in class name order (junit-platform.properties), which puts this class first; a test that mines and sorts
  * before it breaks this one with the timeout of the scan wait.
  */
+@Order(1)
 @Tag("integration")
 class MoneroWalletLightIntegrationTest {
 
