@@ -24,7 +24,7 @@ import monero.wallet.model.MoneroWalletConfig
  * Implements a light wallet: the keys and the addresses of an account, scanned through a
  * [monero-lws](https://github.com/vtnerd/monero-lws) server, which is why the wallet needs no monerod and no wallet
  * files of its own. It is the light wallet of monero-cpp behind the C ABI of monero-c, created or opened with the
- * connection of the server (monero_c_wallet.h:1764,1778). Close it to release the native handle.
+ * connection of the server (monero_c_wallet.h:1792,1806). Close it to release the native handle.
  *
  * The wallet lives in memory: closing it with a save is an error, and a wallet that is opened again supplies the
  * restore height of its first scan, which no file keeps. The getters read the cache of the wallet, so a fresh handle
@@ -44,17 +44,17 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * Get the mnemonic seed of the wallet.
      *
      * @return the 25 words of the seed
-     * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed (monero_c_wallet.h:342)
+     * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed (monero_c_wallet.h:356)
      */
     fun getSeed(): String {
-        return string { lib, h, out -> lib.monero_wallet_get_seed(h, out) }
+        return secret { lib, h, out -> lib.monero_wallet_get_seed(h, out) }
     }
 
     /**
      * Get the language that the seed of the wallet is written in.
      *
      * @return the name of the language
-     * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed (monero_c_wallet.h:351)
+     * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed (monero_c_wallet.h:365)
      */
     fun getSeedLanguage(): String {
         return string { lib, h, out -> lib.monero_wallet_get_seed_language(h, out) }
@@ -62,7 +62,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
 
     /**
      * Get the languages that a seed can be written in. The call needs no wallet, since monero-c has the list of the
-     * languages itself (monero_c_wallet.h:232).
+     * languages itself (monero_c_wallet.h:246).
      *
      * @return the names of the languages
      * @throws MoneroError if the native library fails
@@ -79,27 +79,27 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * Get the private view key of the wallet.
      *
      * @return the key in hexadecimal
-     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:369)
+     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:383)
      */
     fun getPrivateViewKey(): String {
-        return string { lib, h, out -> lib.monero_wallet_get_private_view_key(h, out) }
+        return secret { lib, h, out -> lib.monero_wallet_get_private_view_key(h, out) }
     }
 
     /**
      * Get the private spend key of the wallet.
      *
      * @return the key in hexadecimal
-     * @throws MoneroError if the wallet is closed, or it is view-only, which has no spend key (monero_c_wallet.h:378)
+     * @throws MoneroError if the wallet is closed, or it is view-only, which has no spend key (monero_c_wallet.h:392)
      */
     fun getPrivateSpendKey(): String {
-        return string { lib, h, out -> lib.monero_wallet_get_private_spend_key(h, out) }
+        return secret { lib, h, out -> lib.monero_wallet_get_private_spend_key(h, out) }
     }
 
     /**
      * Get the primary address of the wallet, which is the address of account 0 and subaddress 0.
      *
      * @return the primary address
-     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:360)
+     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:374)
      */
     fun getPrimaryAddress(): String {
         return string { lib, h, out -> lib.monero_wallet_get_primary_address(h, out) }
@@ -108,7 +108,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     // ------------------------------- SYNC AND THE CHAIN ----------------------------------
 
     /**
-     * Synchronize the wallet with its light wallet server in the calling thread (monero_c_wallet.h:1002).
+     * Synchronize the wallet with its light wallet server in the calling thread (monero_c_wallet.h:1015).
      *
      * @param startHeight is the height to sync from, ignored when it is less than the height that the wallet has
      * already scanned
@@ -121,7 +121,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     }
 
     /**
-     * Get the height that the wallet has scanned to, which is the next block to scan (monero_c_wallet.h:387).
+     * Get the height that the wallet has scanned to, which is the next block to scan (monero_c_wallet.h:401).
      *
      * @return the height
      * @throws MoneroError if the wallet is closed
@@ -136,7 +136,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     }
 
     /**
-     * Get the balance of the wallet, including the funds that are still locked (monero_c_wallet.h:397).
+     * Get the balance of the wallet, including the funds that are still locked (monero_c_wallet.h:410).
      *
      * @return the balance in atomic units
      * @throws MoneroError if the wallet is closed
@@ -152,7 +152,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
 
     /**
      * Get the unlocked balance of the wallet, which is the balance without the funds that are still locked
-     * (monero_c_wallet.h:405).
+     * (monero_c_wallet.h:419).
      *
      * @return the unlocked balance in atomic units
      * @throws MoneroError if the wallet is closed
@@ -167,7 +167,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     }
 
     /**
-     * Get the transactions of the wallet (monero_c_wallet.h:1162). A block of the answer holds its miner
+     * Get the transactions of the wallet (monero_c_wallet.h:1190). A block of the answer holds its miner
      * transaction twice, in its transactions and as its miner transaction, which is the block model of monero-cpp:
      * this flattens the transactions of the blocks.
      *
@@ -187,7 +187,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     /**
      * Get the number of candidate spends that the last sync could not verify, which is greater than zero only for a
      * view-only wallet without imported key images. While it is not zero, the balances are the ones of the server,
-     * which the wallet can not refine (monero_c_wallet.h:1802).
+     * which the wallet can not refine (monero_c_wallet.h:1830).
      *
      * @return the number of unrefined spends
      * @throws MoneroError if the wallet is closed
@@ -207,7 +207,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * Get the network of the wallet.
      *
      * @return the network type
-     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:314)
+     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:328)
      */
     fun getNetworkType(): MoneroNetworkType {
         checkNotClosed()
@@ -222,7 +222,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * Check if the wallet is view-only, which means it has no private spend key.
      *
      * @return true if the wallet is view-only, false otherwise
-     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:323)
+     * @throws MoneroError if the wallet is closed (monero_c_wallet.h:337)
      */
     fun isViewOnly(): Boolean {
         checkNotClosed()
@@ -245,7 +245,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     /**
      * Close the wallet, without saving it, since a light wallet has no files: closing it with a save is an error, and
      * the wallet stays open. Every call of a closed wallet fails with "Wallet is closed", and closing it again does
-     * nothing (monero_c_wallet.h:285).
+     * nothing (monero_c_wallet.h:299).
      *
      * @param save is whether to save the wallet before closing it, which must be false
      * @throws MoneroError if a save is asked for, which a light wallet does not support
@@ -287,6 +287,18 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         }
     }
 
+    /**
+     * Call the c abi for a secret of the wallet, which it wipes when it frees the string: the seed and the private
+     * keys.
+     */
+    private fun secret(call: (MoneroC, Pointer, PointerByReference) -> Int): String {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.secret(call(lib, h, out), out) ?: throw MoneroError("monero-c returned no string")
+        }
+    }
+
     companion object {
 
         /**
@@ -298,7 +310,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
          * Create a light wallet, which registers the address with the server. A config with a seed restores the
          * wallet from the seed, a config with its keys restores it from them, and a config with neither creates a
          * wallet with a new random seed. A wallet that the server has is not created again
-         * (monero_c_wallet.h:1764).
+         * (monero_c_wallet.h:1792).
          *
          * @param config is the configuration of the wallet, which needs its network type and the keys or the seed to
          * restore, and can give the restore height and name the language of the seed
@@ -315,7 +327,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
          * Open a light wallet from its light wallet server, which the server has to have: a config with a seed
          * restores the wallet from the seed, a config with its keys restores it from them, and a config with neither
          * fails. The wallet lives in memory, so supply the restore height of its first scan, which no file keeps
-         * (monero_c_wallet.h:1778).
+         * (monero_c_wallet.h:1806).
          *
          * @param config is the configuration of the wallet, which needs its network type and the keys or the seed to
          * restore
@@ -331,7 +343,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         /**
          * Check if a light wallet server has a wallet. The config needs a seed, or the primary address and the
          * private view key, and a seed is read as the address and the view key that it gives. A wallet that the
-         * server does not have is not an error (monero_c_wallet.h:1790).
+         * server does not have is not an error (monero_c_wallet.h:1818).
          *
          * @param config is the configuration of the wallet to look for
          * @param connection is the connection to the light wallet server
