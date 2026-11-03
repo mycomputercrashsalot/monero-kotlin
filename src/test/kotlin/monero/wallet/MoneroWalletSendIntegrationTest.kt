@@ -7,7 +7,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import kotlin.math.min
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -16,6 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import monero.NativeTestSupport
+import monero.RegtestSupport
 import monero.common.MoneroError
 import monero.common.MoneroRpcConnection
 import monero.daemon.model.MoneroNetworkType
@@ -43,7 +43,6 @@ import org.junit.jupiter.api.Tag
 class MoneroWalletSendIntegrationTest {
 
     private val lwsUri = System.getenv("MONERO_KOTLIN_TEST_LWS_URI") ?: "http://127.0.0.1:8443"
-    private val daemonUri = System.getenv("MONERO_C_TEST_DAEMON_URI") ?: "http://127.0.0.1:18081"
 
     // the test wallet of monero-python's config.ini, whose seed carries its spend key
     private val seed = "vortex degrees outbreak teeming gimmick school rounded tonic observant injury leech ought problems ahead upcoming ledge textbook cigar atrium trash dunes eavesdrop dullness evolved vortex"
@@ -109,8 +108,8 @@ class MoneroWalletSendIntegrationTest {
             // mine to the sender, then enough blocks for its coinbases to unlock, and for the decoys of its rings:
             // a coinbase of a regtest chain locks for 60 blocks, every output of the chain is a coinbase, and the
             // wallet needs sixteen unlocked ones for every ring it builds
-            mineBlocks(5, senderAddress)
-            mineBlocks(130, minerAddress)
+            RegtestSupport.mineBlocks(5, senderAddress)
+            RegtestSupport.mineBlocks(130, minerAddress)
             waitScanned(senderAddress, sender.getPrivateViewKey())
             sender.sync()
             val before = sender.getBalance()
@@ -146,7 +145,7 @@ class MoneroWalletSendIntegrationTest {
             assertEquals(secondHash, sender.relayTx(second))
 
             // a block holds the relayed transactions, and the receiver reads exactly what was sent
-            mineBlocks(1, minerAddress)
+            RegtestSupport.mineBlocks(1, minerAddress)
             waitScanned(receiverAddress, receiver.getPrivateViewKey())
             receiver.sync()
             assertEquals(receiverBefore.add(firstAmount).add(secondAmount), receiver.getBalance())
@@ -204,26 +203,6 @@ class MoneroWalletSendIntegrationTest {
         config.destinations = listOf(MoneroDestination(address, amount))
         config.relay = false
         return config
-    }
-
-    /**
-     * Mine blocks to an address with the daemon behind the server. The daemon mines a large number of blocks
-     * slower than a call can wait for it, so the blocks are mined in batches.
-     *
-     * @param numBlocks is the number of blocks to mine
-     * @param address is the address that the coinbases pay
-     * @throws MoneroError if the daemon does not mine them
-     */
-    private fun mineBlocks(numBlocks: Int, address: String) {
-        var remaining = numBlocks
-        while (remaining > 0) {
-            val batch = min(25, remaining)
-            val body = """{"jsonrpc": "2.0", "id": "0", "method": "generateblocks",""" +
-                """ "params": {"amount_of_blocks": $batch, "wallet_address": "$address", "starting_nonce": 0}}"""
-            val response = post(daemonUri, "/json_rpc", body, Duration.ofSeconds(120))
-            if (!response.contains("\"status\": \"OK\"")) throw MoneroError("generateblocks did not mine: $response")
-            remaining -= batch
-        }
     }
 
     /**
