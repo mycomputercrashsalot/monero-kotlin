@@ -15,6 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import monero.NativeTestSupport
+import monero.RegtestSupport
 import monero.common.MoneroError
 import monero.common.MoneroRpcConnection
 import monero.daemon.model.MoneroNetworkType
@@ -44,7 +45,6 @@ import org.junit.jupiter.api.Tag
 class MoneroWalletLightIntegrationTest {
 
     private val lwsUri = System.getenv("MONERO_KOTLIN_TEST_LWS_URI") ?: "http://127.0.0.1:8443"
-    private val daemonUri = System.getenv("MONERO_C_TEST_DAEMON_URI") ?: "http://127.0.0.1:18081"
 
     // the throwaway regtest account of the captures, whose ground truth the tests assert
     private val address = "49MNnnrtLzj5vsWsHya28tKFPTcYfEnEYLfCqogA6Dw1TeqvHv5uRPTgjXSyD9pSoPVae3oZe3R5xHsGeC4VapjRV2m6gGj"
@@ -95,7 +95,7 @@ class MoneroWalletLightIntegrationTest {
             assertEquals("Wallet already exists", exists.message)
 
             // mine five blocks to the account the way the captures were taken, then wait for the server to scan them
-            mineBlocks(5)
+            RegtestSupport.mineBlocks(5, address)
             waitScannedHeight(5)
 
             // the wallet syncs from its server and reads the captured ground truth
@@ -152,19 +152,6 @@ class MoneroWalletLightIntegrationTest {
                 false
             }
         }
-    }
-
-    /**
-     * Mine blocks to the account with the daemon behind the server, the way the captures were taken.
-     *
-     * @param numBlocks is the number of blocks to mine
-     * @throws MoneroError if the daemon does not mine them
-     */
-    private fun mineBlocks(numBlocks: Int) {
-        val body = """{"jsonrpc": "2.0", "id": "0", "method": "generateblocks",""" +
-            """ "params": {"amount_of_blocks": $numBlocks, "wallet_address": "$address", "starting_nonce": 0}}"""
-        val response = post(daemonUri, "/json_rpc", body)
-        if (!response.contains("\"status\": \"OK\"")) throw MoneroError("generateblocks did not mine: $response")
     }
 
     /**
