@@ -100,7 +100,7 @@ class MoneroWalletLightIntegrationTest {
 
             // the wallet syncs from its server and reads the captured ground truth
             val sync = wallet.sync()
-            assertTrue((sync.numBlocksFetched ?: -1L) >= 0, "the sync result has a fetched count")
+            assertEquals(5L, sync.numBlocksFetched)
             assertNotNull(sync.receivedMoney, "the sync result says whether money was received")
             assertEquals(6L, wallet.getHeight())
             assertEquals(rewards, wallet.getBalance())
@@ -137,11 +137,14 @@ class MoneroWalletLightIntegrationTest {
     // ------------------------------- PRIVATE ------------------------------------
 
     // the rest server takes a while to come up after the compose starts it, so the probe retries for a minute
-    // before it skips. a server that answers but is not an lws fails the test below, it does not skip it
+    // before it skips. a server that answers but is not an lws fails the probe: the version of an lws names its
+    // server type, and only a connection the server refuses, or a request it answers before monero-lws is ready,
+    // waits
     private val isServerUp: Boolean by lazy {
         (1..60).any {
             try {
-                post(lwsUri, "/get_version", "{}")
+                val version = post(lwsUri, "/get_version", "{}")
+                assertTrue(version.contains("\"server_type\":\"monero-lws\""), "the server at $lwsUri is not a monero-lws: $version")
                 true
             } catch (e: IOException) {
                 Thread.sleep(1000)
