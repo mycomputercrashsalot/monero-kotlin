@@ -68,11 +68,8 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * @throws MoneroError if the native library fails
      */
     fun getSeedLanguages(): List<String> {
-        checkNotClosed()
-        return run { lib, _ ->
-            val out = PointerByReference()
-            MoneroNative.strings(lib.monero_wallet_get_seed_languages(out), out)
-        }
+        val out = PointerByReference()
+        return MoneroNative.strings(MoneroNative.lib.monero_wallet_get_seed_languages(out), out)
     }
 
     /**
