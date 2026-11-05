@@ -250,6 +250,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * @param save is whether to save the wallet before closing it, which must be false
      * @throws MoneroError if a save is asked for, which a light wallet does not support
      */
+    @Synchronized
     fun close(save: Boolean) {
         if (closed) return
         if (save) {
