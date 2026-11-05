@@ -30,8 +30,11 @@ import org.junit.jupiter.api.Tag
  * The send path of the light wallet against a live monero-lws: a wallet with a seed, which has its spend key,
  * creates transactions through the RingCT construction of monero-cpp, relays them, and both wallets read the exact
  * movement of the funds. It needs the monero-lws of src/test/integration/docker-compose.yml, on the regtest node
- * behind it, and mines onto whatever chain it finds, so it runs after MoneroWalletLightIntegrationTest, which the
- * class-name order of junit-platform.properties makes sure of. The blocks it mines give the wallet its decoys: every
+ * behind it, and mines onto whatever chain it finds, so it also stands on its own on a fresh chain, where it
+ * mines the first block itself: a wallet that is created on the chain of only a genesis block keeps the height
+ * that it found, which is the one that it has scanned, so a sync after the blocks that the test mines for it
+ * fetches nothing. It runs second, after MoneroWalletLightIntegrationTest, which the order annotation of
+ * junit-platform.properties makes sure of, because that test needs the fresh database of the server. The blocks it mines give the wallet its decoys: every
  * output of a regtest chain is a coinbase, which spends only sixty blocks after it was mined, so the test mines
  * enough of them for sixteen to be spendable in every ring. Set the environment variable
  * MONERO_KOTLIN_TEST_LWS_URI to the URI of the server when it is not the one of that file; the node it mines on is
@@ -62,6 +65,10 @@ class MoneroWalletSendIntegrationTest {
         NativeTestSupport.assumeAvailable()
         NativeTestSupport.assumeLightWalletAvailable()
         assumeTrue(isServerUp, "no monero-lws at $lwsUri: start the compose of src/test/integration, or set MONERO_KOTLIN_TEST_LWS_URI")
+
+        // one block first, so the chain is past its genesis block whatever ran before: a wallet made on a
+        // genesis-only chain keeps a scan height that a later sync fetches nothing after
+        RegtestSupport.mineBlocks(1, unwatchedAddress())
     }
 
     @AfterTest
