@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Tag
  *
  * The test asserts that no account exists for the address yet, so it needs a fresh database, which a `down` of the
  * compose gives, and it must run before any test that mines to the account or registers it. The integration tests
- * run in class name order (junit-platform.properties), which puts this class first; a test that mines and sorts
+ * run in the order of their annotations (junit-platform.properties), which puts this class first; a test that mines and sorts
  * before it breaks this one with the timeout of the scan wait.
  */
 @Order(1)
