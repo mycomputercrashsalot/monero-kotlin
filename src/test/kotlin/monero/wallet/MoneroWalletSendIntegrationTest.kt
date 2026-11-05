@@ -67,7 +67,8 @@ class MoneroWalletSendIntegrationTest {
         assumeTrue(isServerUp, "no monero-lws at $lwsUri: start the compose of src/test/integration, or set MONERO_KOTLIN_TEST_LWS_URI")
 
         // one block first, so the chain is past its genesis block whatever ran before: a wallet made on a
-        // genesis-only chain keeps a scan height that a later sync fetches nothing after
+        // genesis-only chain keeps a scan height that a later sync fetches nothing after. The block pays an
+        // address no wallet of the test watches, since the mining address of the support is the sender
         RegtestSupport.mineBlocks(1, unwatchedAddress())
     }
 
@@ -136,6 +137,7 @@ class MoneroWalletSendIntegrationTest {
             val firstTxs = sender.createTxs(txConfig(0, receiverAddress, firstAmount))
             assertEquals(1, firstTxs.size)
             val first = firstTxs[0]
+            assertEquals(false, first.isRelayed, "a transaction of a config that does not relay is not relayed")
             val firstFee = assertNotNull(first.fee)
             assertTrue(firstFee > BigInteger.ZERO)
             val firstHash = assertNotNull(first.hash)
