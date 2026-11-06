@@ -49,7 +49,7 @@ jobs:
       - name: Check that the release is the pin of the submodule
         run: |
           pinned=$(git rev-parse HEAD:external/monero-c)
-          released=$(git ls-remote https://github.com/libmonero/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
+          released=$(git ls-remote https://github.com/mycomputercrashsalot/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
           test -n "$released" || { echo "::error::monero-c has no release v$MONERO_C_VERSION"; exit 1; }
           if [ "$pinned" != "$released" ]; then
             echo "::error::the submodule is at $pinned and v$MONERO_C_VERSION of monero-c is at $released: set MONERO_C_VERSION and MONERO_C_ANDROID_SHA256 of android.yml to the release of the submodule"
@@ -59,7 +59,7 @@ jobs:
       - name: Download the native library
         run: |
           curl --retry 5 --retry-delay 5 --retry-max-time 150 -fsSL -o "$RUNNER_TEMP/monero-native-android.aar" \
-            "https://github.com/libmonero/monero-c/releases/download/v$MONERO_C_VERSION/monero-native-android-$MONERO_C_VERSION.aar"
+            "https://github.com/mycomputercrashsalot/monero-c/releases/download/v$MONERO_C_VERSION/monero-native-android-$MONERO_C_VERSION.aar"
           echo "$MONERO_C_ANDROID_SHA256  $RUNNER_TEMP/monero-native-android.aar" | sha256sum -c
 
       - name: Set up Java
