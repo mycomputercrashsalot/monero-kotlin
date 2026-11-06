@@ -152,6 +152,8 @@ MoneroWalletRpc("http://localhost:28084", "rpc_user", "abc123").use { wallet ->
 
 A light wallet keeps no chain and no files: a light wallet server scans the chain for its address and answers its questions, so it restores in seconds on a phone. It is made from a seed, from keys, or at random, and it lives in memory: there is nothing to save, and closing it forgets it. The server sees the address, so it is trusted with the privacy of the account the way a remote node is.
 
+A light wallet keeps no chain and no files: a light wallet server scans the chain for its address and answers its questions, so it restores in seconds on a phone. It is made from a seed, from keys, or at random, and it lives in memory: there is nothing to save, and closing it forgets it. The server holds the private view key of the account, so it reads its whole history: it is trusted with more than a remote node, which is why it is self-hosted.
+
 ```kotlin
 // create a light wallet on a monero-lws server
 val config = MoneroWalletConfig()
@@ -172,7 +174,7 @@ MoneroWalletLight.openWallet(config, connection).use { wallet ->
 }
 ```
 
-A monero-lws server to try it against is the compose of the integration tests, which stands one up behind a regtest node:
+A monero-lws server to try it against is the compose of the integration tests, which stands one up behind a regtest node (its header says the node starts first on a slow host):
 
 ```
 docker compose -f src/test/integration/docker-compose.yml up -d
