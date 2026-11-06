@@ -36,8 +36,8 @@ object NativeTestSupport {
 
     /**
      * Whether the library of monero-c has the light wallet surface. Not every build of it has the four functions of the
-     * light wallet: the submodule of this repository pins a monero-c without them, so a test that calls them skips until
-     * the pin moves to a monero-c that has them.
+     * light wallet: the submodule of this branch pins the fork of monero-c that carries them, but a library of the
+     * environment can point elsewhere, so a test that calls them skips when it does not have them.
      */
     val isLightWalletAvailable: Boolean by lazy {
         if (!isAvailable) false
