@@ -162,7 +162,8 @@ class MoneroWalletLightTest {
         return config
     }
 
-    // the shape checks of the python suite, which validates with MoneroUtils
+    // the shape the offline suite can check: the full validation of MoneroUtils is a call of the native
+    // library, which the offline suite does not load
     private fun validateMnemonic(seed: String) {
         assertEquals(25, seed.split(" ").size, seed)
     }
