@@ -2,6 +2,9 @@ package monero.wallet
 
 import java.net.URI
 import java.net.http.HttpClient
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.io.IOException
@@ -131,6 +134,38 @@ class MoneroWalletLightIntegrationTest {
             assertEquals(rewards, reopened.getBalance())
         } finally {
             reopened.close()
+        }
+    }
+
+    @Test
+    fun close_FromManyThreadsAtOnce_ClosesOnce() {
+        repeat(5) {
+            val config = MoneroWalletConfig()
+            config.networkType = MoneroNetworkType.MAINNET
+
+            // a wallet of its own at random, so the race does not touch the account of the capture, whose ground
+            // truth the test above asserts
+            val wallet = MoneroWalletLight.createWallet(config, connection)
+            try {
+                val threads = 8
+                val start = CountDownLatch(1)
+                val pool = Executors.newFixedThreadPool(threads)
+                try {
+                    val closes = (0 until threads).map {
+                        pool.submit {
+                            start.await()
+                            wallet.close()
+                        }
+                    }
+                    start.countDown()
+                    for (close in closes) close.get(30, TimeUnit.SECONDS)
+                } finally {
+                    pool.shutdownNow()
+                }
+                assertTrue(wallet.isClosed())
+            } finally {
+                if (!wallet.isClosed()) wallet.close()
+            }
         }
     }
 
