@@ -199,7 +199,7 @@ jobs:
       COMPOSE_FILE: src/test/integration/docker-compose.yml
 
     steps:
-      # only monero-c, for its docker-compose.yml: the submodules of monero-c are not needed
+      # only monero-c is checked out, for its docker-compose.yml: the submodules of monero-c are not needed
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
@@ -238,8 +238,8 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      # the node starts alone first: the header of the compose file says why an lws that starts against a node
-      # that is still initializing locks a wrong chain height and never scans
+      # the node starts alone first: an lws that starts against a node that is still initializing locks a wrong
+      # chain height and never scans, which the header of the compose file says too
       - name: Start the regtest monerod
         run: docker compose up -d node
 
@@ -267,8 +267,8 @@ jobs:
           done
           echo "monero-lws did not answer"; exit 1
 
-      # the light wallet tests need the light functions of monero-c, which the submodule of this branch carries
-      # through its fork: they skip with a message when the library has no light wallet
+      # the light wallet tests need the light functions of monero-c, which the pin of the submodule brings: they
+      # skip with a message when the library has no light wallet
       - name: Run the light wallet integration tests
         env:
           # the logs of the tests go in the results that are uploaded

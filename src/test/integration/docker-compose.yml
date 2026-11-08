@@ -4,7 +4,7 @@
 # the container: docker compose down makes the next up a fresh one, which the tests need, since they assert the
 # responses of an account that no block was mined to yet
 #
-# on a slow docker host (an amd64 image under emulation, say) start the node first and give its core the
+# on a slow docker host (an amd64 image under emulation) start the node first and give its core the
 # time to come up before the lws starts: an lws that syncs against a node that is still initializing locks
 # a chain height of its own estimate and never scans. `docker compose up -d node`, wait for
 # `curl http://127.0.0.1:18081/get_height` to answer, then `docker compose up -d lws`.

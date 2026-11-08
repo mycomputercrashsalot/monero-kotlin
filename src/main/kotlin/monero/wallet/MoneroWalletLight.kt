@@ -105,7 +105,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     // ------------------------------- SYNC AND THE CHAIN ----------------------------------
 
     /**
-     * Synchronize the wallet with its light wallet server in the calling thread.
+     * Synchronize the wallet with its light wallet server, on the thread of the caller.
      *
      * @param startHeight is the height to sync from, ignored when it is less than the height that the wallet has
      * already scanned
@@ -148,8 +148,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     }
 
     /**
-     * Get the unlocked balance of the wallet, which is the balance without the funds that are still locked
-     *.
+     * Get the unlocked balance of the wallet, which is the balance without the funds that are still locked.
      *
      * @return the unlocked balance in atomic units
      * @throws MoneroError if the wallet is closed
@@ -244,22 +243,22 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * the wallet stays open. Every call of a closed wallet fails with "Wallet is closed", and closing it again does
      * nothing.
      *
-     * @param save is whether to save the wallet before closing it, which must be false
+     * @param save is whether to save the wallet before closing it, which a light wallet does not support, so it
+     * has to be false
      * @throws MoneroError if a save is asked for, which a light wallet does not support
      */
     @Synchronized
     fun close(save: Boolean) {
         if (closed) return
         if (save) {
-
-            // a light wallet lives in memory: the c abi refuses the save and the wallet stays open,
-            // which the flag below must not forget
+            // a light wallet lives in memory: the c abi refuses the save and the wallet stays open, which leaves
+            // the flag false
             run { lib, h -> MoneroNative.ok(lib.monero_wallet_close(h, save)) }
             return
         }
 
-        // the calls of a closing wallet are refused before its handle dies, so a call that races the close
-        // fails cleanly instead of reaching a closed handle
+        // the calls of a closing wallet are refused before its handle dies, so a call that is in flight fails with
+        // the error and not on a freed handle
         closed = true
         run { lib, h -> MoneroNative.ok(lib.monero_wallet_close(h, save)) }
         worker.close()
@@ -317,8 +316,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         /**
          * Create a light wallet, which registers the address with the server. A config with a seed restores the
          * wallet from the seed, a config with its keys restores it from them, and a config with neither creates a
-         * wallet with a new random seed. A wallet that the server has is not created again
-         *.
+         * wallet with a new random seed. A wallet that the server has is not created again.
          *
          * @param config is the configuration of the wallet, which needs its network type and the keys or the seed to
          * restore, and can give the restore height and name the language of the seed
@@ -334,8 +332,7 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         /**
          * Open a light wallet from its light wallet server, which the server has to have: a config with a seed
          * restores the wallet from the seed, a config with its keys restores it from them, and a config with neither
-         * fails. The wallet lives in memory, so supply the restore height of its first scan, which no file keeps
-         *.
+         * fails. The wallet lives in memory, so supply the restore height of its first scan, which no file keeps.
          *
          * @param config is the configuration of the wallet, which needs its network type and the keys or the seed to
          * restore

@@ -154,6 +154,8 @@ A light wallet keeps no chain and no files: a light wallet server scans the chai
 
 A light wallet keeps no chain and no files: a light wallet server scans the chain for its address and answers its questions, so it restores in seconds on a phone. It is made from a seed, from keys, or at random, and it lives in memory: there is nothing to save, and closing it forgets it. The server holds the private view key of the account, so it reads its whole history: it is trusted with more than a remote node, which is why it is self-hosted.
 
+A light wallet keeps no chain and no files: a light wallet server scans the chain for its address and answers its questions, so it needs no scan of its own. It is made from a seed, from keys, or at random, and it lives in memory: there is nothing to save, and closing it throws it away. The server holds the private view key of the account, so it reads its whole history: it is trusted with more than a remote node, which is why it is self-hosted.
+
 ```kotlin
 // create a light wallet on a monero-lws server
 val config = MoneroWalletConfig()
