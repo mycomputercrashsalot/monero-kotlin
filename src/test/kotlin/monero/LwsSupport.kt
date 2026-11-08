@@ -22,9 +22,9 @@ object LwsSupport {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
 
     // the rest server takes a while to come up after the compose starts it, so the probe retries for a minute
-    // before it skips. a server that answers but is not an lws fails the probe: the version of an lws names its
-    // server type, and only a connection the server refuses, or a request it answers before monero-lws is ready,
-    // waits
+    // before it skips. a server that answers but is not an lws fails the probe, since the version of an lws names
+    // its server type. the probe waits only while the server refuses the connection, or answers before monero-lws
+    // is ready
     val isUp: Boolean by lazy {
         (1..60).any {
             try {
@@ -62,40 +62,34 @@ object LwsSupport {
     }
 
     /**
-     * Wait for the scan of an account to reach the height of the chain.
+     * Wait for the scan of an account to reach the height of the chain: the server sees the new blocks over zmq
+     * and scans them in the background.
      *
      * @param address is the address of the account
      * @param viewKey is the private view key of the account
-     * @throws MoneroError if it does not reach it in a minute
+     * @throws MoneroError if the scan does not reach the height of the chain in a minute
      */
     fun waitScannedToChain(address: String, viewKey: String) {
-        val deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos()
-        while (true) {
-            val info = post("/get_address_info", """{"address":"$address","view_key":"$viewKey"}""")
-            val scanned = Regex("\"scanned_block_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
-            val chain = Regex("\"blockchain_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
-            if (scanned != null && scanned == chain) return
-            if (System.nanoTime() >= deadline) throw MoneroError("the scan never reached the height of the chain, it is at $scanned of $chain: $info")
-            Thread.sleep(500)
-        }
+        waitScanned(address, viewKey, null)
     }
 
     /**
-     * Wait for the scan of an account to reach a height: the server sees the new blocks over zmq and scans them
-     * in the background.
+     * Wait for the scan of an account to reach a height.
      *
      * @param address is the address of the account
      * @param viewKey is the private view key of the account
-     * @param height is the block height the account has to reach
-     * @throws MoneroError if it does not reach it in a minute
+     * @param height is the block height the account has to reach, or null for the height of the chain
+     * @throws MoneroError if the scan does not reach the height in a minute
      */
-    fun waitScanned(address: String, viewKey: String, height: Long) {
+    fun waitScanned(address: String, viewKey: String, height: Long?) {
         val deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos()
         while (true) {
             val info = post("/get_address_info", """{"address":"$address","view_key":"$viewKey"}""")
             val scanned = Regex("\"scanned_block_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
-            if (scanned == height) return
-            if (System.nanoTime() >= deadline) throw MoneroError("the scan never reached height $height, it is at $scanned: $info")
+            val target = height ?: Regex("\"blockchain_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
+            if (scanned != null && scanned == target) return
+            if (System.nanoTime() >= deadline) throw MoneroError("the scan never reached ${height ?: "the height of the chain"}: it is at $scanned ($info)")
+            Thread.sleep(500)
         }
     }
 }
