@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import monero.LwsSupport
 import monero.NativeTestSupport
 import monero.RegtestSupport
 import monero.common.MoneroError
@@ -45,7 +46,7 @@ import org.junit.jupiter.api.Tag
 @Tag("integration")
 class MoneroWalletSendIntegrationTest {
 
-    private val lwsUri = System.getenv("MONERO_KOTLIN_TEST_LWS_URI") ?: "http://127.0.0.1:8443"
+    
 
     // the test wallet of monero-python's config.ini, whose seed carries its spend key
     private val seed = "vortex degrees outbreak teeming gimmick school rounded tonic observant injury leech ought problems ahead upcoming ledge textbook cigar atrium trash dunes eavesdrop dullness evolved vortex"
@@ -57,14 +58,13 @@ class MoneroWalletSendIntegrationTest {
     private val firstAmount = BigInteger.valueOf(5000000000000L)
     private val secondAmount = BigInteger.valueOf(3000000000000L)
 
-    private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
-    private val connection: MoneroRpcConnection by lazy { MoneroRpcConnection(lwsUri) }
+        private val connection: MoneroRpcConnection by lazy { MoneroRpcConnection(LwsSupport.lwsUri) }
 
     @BeforeTest
     fun requireLibraryAndServer() {
         NativeTestSupport.assumeAvailable()
         NativeTestSupport.assumeLightWalletAvailable()
-        assumeTrue(isServerUp, "no monero-lws at $lwsUri: start the compose of src/test/integration, or set MONERO_KOTLIN_TEST_LWS_URI")
+        assumeTrue(LwsSupport.isUp, "no monero-lws at ${LwsSupport.lwsUri}: start the compose of src/test/integration, or set MONERO_KOTLIN_TEST_LWS_URI")
 
         // one block first, so the chain is past its genesis block whatever ran before: a wallet made on a
         // genesis-only chain keeps a scan height that a later sync fetches nothing after. The block pays an
@@ -72,10 +72,6 @@ class MoneroWalletSendIntegrationTest {
         RegtestSupport.mineBlocks(1, unwatchedAddress())
     }
 
-    @AfterTest
-    fun closeClient() {
-        http.close()
-    }
 
     @Test
     fun testSendFromASpendKeyWallet() {
@@ -118,7 +114,7 @@ class MoneroWalletSendIntegrationTest {
             // wallet needs sixteen unlocked ones for every ring it builds
             RegtestSupport.mineBlocks(5, senderAddress)
             RegtestSupport.mineBlocks(130, minerAddress)
-            waitScanned(senderAddress, sender.getPrivateViewKey())
+            LwsSupport.waitScannedToChain(senderAddress, sender.getPrivateViewKey())
             sender.sync()
             val before = sender.getBalance()
             val unlockedBefore = sender.getUnlockedBalance()
@@ -155,7 +151,7 @@ class MoneroWalletSendIntegrationTest {
 
             // a block holds the relayed transactions, and the receiver reads exactly what was sent
             RegtestSupport.mineBlocks(1, minerAddress)
-            waitScanned(receiverAddress, receiver.getPrivateViewKey())
+            LwsSupport.waitScannedToChain(receiverAddress, receiver.getPrivateViewKey())
             receiver.sync()
             assertEquals(receiverBefore.add(firstAmount).add(secondAmount), receiver.getBalance())
             val received = receiver.getTxs().single { tx -> tx.hash == relayedHash }
@@ -188,26 +184,6 @@ class MoneroWalletSendIntegrationTest {
         return MoneroWalletKeys.createWalletRandom(config).use { miner -> miner.getPrimaryAddress() }
     }
 
-    // the rest server takes a while to come up after the compose starts it, so the probe retries for a minute
-    // before it skips. a server that answers but is not an lws fails the probe: the version of an lws names its
-    // server type, and only a connection the server refuses, or a request it answers before monero-lws is ready,
-    // waits
-    private val isServerUp: Boolean by lazy {
-        (1..60).any {
-            try {
-                val version = post(lwsUri, "/get_version", "{}")
-                assertTrue(version.contains("\"server_type\":\"monero-lws\""), "the server at $lwsUri is not a monero-lws: $version")
-                true
-            } catch (e: IOException) {
-                Thread.sleep(1000)
-                false
-            } catch (e: MoneroError) {
-                // the rest server answers before monero-lws is ready, so a request it refuses is the server not being up yet
-                Thread.sleep(1000)
-                false
-            }
-        }
-    }
 
     private fun txConfig(accountIdx: Int?, address: String, amount: BigInteger): MoneroTxConfig {
         val config = MoneroTxConfig()
@@ -217,45 +193,5 @@ class MoneroWalletSendIntegrationTest {
         return config
     }
 
-    /**
-     * Wait for the scan of an account to reach the height of the chain as its server sees it: the server sees the
-     * new blocks over zmq and scans them in the background. The height of the daemon counts one more than the
-     * height that the server reports, so the two heights of the server are compared with each other.
-     *
-     * @param address is the address of the account
-     * @param viewKey is the private view key of the account
-     * @throws MoneroError if it does not reach the height in a minute
-     */
-    private fun waitScanned(address: String, viewKey: String) {
-        val deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos()
-        while (true) {
-            val info = post(lwsUri, "/get_address_info", """{"address":"$address","view_key":"$viewKey"}""")
-            val scanned = Regex("\"scanned_block_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
-            val chain = Regex("\"blockchain_height\": ?([0-9]+)").find(info)?.groupValues?.get(1)?.toLong()
-            if (scanned != null && scanned == chain) return
-            if (System.nanoTime() >= deadline) throw MoneroError("the scan never reached the height of the chain, it is at $scanned of $chain: $info")
-            Thread.sleep(500)
-        }
-    }
 
-    /**
-     * Post a body to a path of a server, and return what it answers.
-     *
-     * @param server is the base URI of the server
-     * @param path is the path of the call, or /json_rpc of a monerod
-     * @param body is the JSON of the request
-     * @param timeout is how long the call may take
-     * @return the JSON of the response
-     * @throws MoneroError if the server does not answer 200
-     */
-    private fun post(server: String, path: String, body: String, timeout: Duration = Duration.ofSeconds(30)): String {
-        val request = HttpRequest.newBuilder(URI.create(server + path))
-            .header("Content-Type", "application/json")
-            .timeout(timeout)
-            .POST(HttpRequest.BodyPublishers.ofString(body))
-            .build()
-        val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() != 200) throw MoneroError("POST $path answered ${response.statusCode()}: ${response.body()}")
-        return response.body()
-    }
 }
