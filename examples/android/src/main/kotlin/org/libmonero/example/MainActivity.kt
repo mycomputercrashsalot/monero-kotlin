@@ -8,101 +8,114 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import monero.common.MoneroError
 import monero.common.MoneroRpcConnection
+import monero.common.MoneroUtils
 import monero.daemon.model.MoneroNetworkType
-import monero.wallet.MoneroWalletFull
+import monero.wallet.MoneroWalletLight
 import monero.wallet.model.MoneroWalletConfig
+import java.math.BigInteger
 
 /**
- * The example of the android module: creates a full wallet in memory, reads its version and its address, connects it to a daemon and reads
- * the height of the chain, through the AAR (the JNA layer of the library into the libmonero_c.so that the AAR carries).
+ * The example of the android module: opens the light wallet of an account on a light wallet
+ * server, syncs it, and reads its balance, through the AAR — the JNA layer of the library into
+ * the libmonero_c.so the AAR carries, and the REST API of the server behind it.
  *
- * The daemon comes from the build field, which defaults to the regtest node of the docker-compose.yml of monero-c. An emulator reaches that
- * node from the host with `adb reverse tcp:18081 tcp:18081`; the field is editable on screen. The calls run off the main thread, since the
- * network on the main thread is forbidden on Android.
- *
- * The wallet has no files, so its seed is gone with it: the example never shows or logs it.
+ * The server, the account and its view key come from the build fields, which the defaults fill
+ * with the throwaway regtest account of the integration tests and the light wallet server of the
+ * compose of src/test/integration. An emulator reaches that server from the host with
+ * `adb reverse tcp:8443 tcp:8443`; the fields are editable on screen to point the example at
+ * another server or account. The calls run off the main thread, since the network on main is
+ * forbidden on Android.
  */
 class MainActivity : Activity() {
 
-    private lateinit var create: Button
+    private lateinit var open: Button
     private lateinit var report: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val daemon = EditText(this)
-        daemon.setText(BuildConfig.DAEMON_URI)
-        create = Button(this)
-        create.text = "Create wallet"
+        val server = EditText(this)
+        server.setText(BuildConfig.LWS_URI)
+        val address = EditText(this)
+        address.setText(BuildConfig.WALLET_ADDRESS)
+        val viewKey = EditText(this)
+        viewKey.setText(BuildConfig.WALLET_VIEW_KEY)
+        open = Button(this)
+        open.text = "Open light wallet"
         report = TextView(this)
-
-        // a rotation recreates the activity, so the report of the calls that ran before it is kept in the state
-        report.text = savedInstanceState?.getCharSequence("report")
-            ?: "the daemon is editable; the default is the regtest node of the compose of monero-c\n"
+        report.text = "the account, the view key and the server are editable; the defaults are the regtest stack of the integration tests\n"
         report.textSize = 12f
 
         val pad = (resources.displayMetrics.density * 16).toInt()
         val layout = LinearLayout(this)
         layout.orientation = LinearLayout.VERTICAL
         layout.setPadding(pad, pad, pad, pad)
-        layout.addView(daemon)
-        layout.addView(create)
+        layout.addView(server)
+        layout.addView(address)
+        layout.addView(viewKey)
+        layout.addView(open)
         val scroll = ScrollView(this)
         scroll.addView(report)
         layout.addView(scroll)
         setContentView(layout)
 
-        create.setOnClickListener {
-            create.isEnabled = false
+        open.setOnClickListener {
+            open.isEnabled = false
             report.text = ""
-            val daemonUri = daemon.text.toString()
-            Thread { createWallet(daemonUri) }.start()
+            val serverUri = server.text.toString()
+            val accountAddress = address.text.toString()
+            val accountViewKey = viewKey.text.toString()
+            Thread { openLightWallet(serverUri, accountAddress, accountViewKey) }.start()
         }
 
-        // focused from the start, so a keyboard (or an instrumented run sending the enter key) can create the wallet without touching the screen
-        create.isFocusableInTouchMode = true
-        create.requestFocus()
+        // focused from the start, so a keyboard (or an instrumented run sending the
+        // enter key) can open the wallet without touching the screen
+        open.isFocusableInTouchMode = true
+        open.requestFocus()
     }
 
     /**
-     * Create a wallet in memory connected to a daemon, and read what it says.
+     * Open the light wallet of the account on the server, sync it, and read its balance. The
+     * wallet is created when the server does not have the account, and opened when it does, which
+     * is the flow of a real client: a first run registers the account, the next ones resume it.
      *
-     * @param daemonUri is the URI of the daemon
+     * @param serverUri is the URI of the light wallet server
+     * @param accountAddress is the primary address of the account
+     * @param accountViewKey is the private view key of the account
      */
-    private fun createWallet(daemonUri: String) {
+    private fun openLightWallet(serverUri: String, accountAddress: String, accountViewKey: String) {
         val config = MoneroWalletConfig()
         config.networkType = MoneroNetworkType.MAINNET
-        config.regtest = BuildConfig.REGTEST
-        config.server = MoneroRpcConnection(daemonUri)
+        config.primaryAddress = accountAddress
+        config.privateViewKey = accountViewKey
+        val connection = MoneroRpcConnection(serverUri)
         try {
-            MoneroWalletFull.createWallet(config).use { wallet ->
-                report("version: ${wallet.getVersion().number}")
-                report("address: ${wallet.getPrimaryAddress()}")
-                report("seed languages: ${wallet.getSeedLanguages().size}")
-                report("connected to the daemon: ${wallet.isConnectedToDaemon()}")
-                report("height of the daemon: ${wallet.getDaemonHeight()}")
+            val exists = MoneroWalletLight.walletExists(config, connection)
+            report("the server ${if (exists) "has" else "does not have"} the account")
+            val wallet = if (exists) MoneroWalletLight.openWallet(config, connection) else MoneroWalletLight.createWallet(config, connection)
+            wallet.use {
+                report("opened ${wallet.getPrimaryAddress()}")
+                report("view only: ${wallet.isViewOnly()}")
+                val result = wallet.sync()
+                report("synced: ${result.numBlocksFetched} blocks fetched, received money: ${result.receivedMoney}")
+                val balance = wallet.getBalance()
+                report("balance: $balance atomic units (~${MoneroUtils.atomicUnitsToXmr(BigInteger.valueOf(balance))} XMR)")
             }
-        } catch (e: UnsatisfiedLinkError) {
-            // a library that loads and lacks a function of the C ABI: a stale or hand-built one reaches the phone, since the build checks only
-            // that the library is the C ABI of monero-c
-            Log.e(TAG, "the library is missing a function", e)
-            report("the library of the AAR is missing a function: $e")
-        } catch (e: MoneroError) {
-            // the calls of the wallet fail with this, e.g. a daemon that does not answer
-            Log.e(TAG, "the wallet call failed", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "the light wallet call failed", e)
             report("failed: $e")
         } finally {
             runOnUiThread {
-                create.isEnabled = true
-                create.requestFocus()
+                open.isEnabled = true
+                open.requestFocus()
             }
         }
     }
 
     /**
-     * Append a line to the report on screen and to the log, which is where an instrumented run reads the proof from.
+     * Append a line to the report on screen and to the log, which is where an instrumented run
+     * reads the proof from.
      *
      * @param line is the line to report
      */
