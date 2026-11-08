@@ -281,6 +281,7 @@ jobs:
           --class-path unit-tests/classes/test
           --class-path unit-tests/resources/test
           --select-class monero.wallet.MoneroWalletLightIntegrationTest
+          --select-class monero.wallet.MoneroWalletSendIntegrationTest
           --reports-dir test-results
 
       - name: Show the logs of the node and the server
