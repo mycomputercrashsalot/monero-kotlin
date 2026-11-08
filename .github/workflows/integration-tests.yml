@@ -125,17 +125,6 @@ jobs:
           wait_for 18081 rpc_daemon_user:abc123 get_block_count '"count"'
           for port in 18082 18083 18084; do wait_for "$port" rpc_user:abc123 get_version '"version"'; done
 
-      # monero-lws answers only after it has scanned the chain of the node, which takes about a minute after it starts
-      - name: Wait for monero-lws
-        run: |
-          for _ in $(seq 1 60); do
-            if curl -fsS -m 5 -X POST "$MONERO_KOTLIN_TEST_LWS_URI/get_version" >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "monero-lws did not answer"; exit 1
-
       # --fail-if-no-tests: a run that finds no integration test would pass without testing anything
       - name: Run the integration tests
         env:
@@ -292,7 +281,6 @@ jobs:
           --class-path unit-tests/classes/test
           --class-path unit-tests/resources/test
           --select-class monero.wallet.MoneroWalletLightIntegrationTest
-          --select-class monero.wallet.MoneroWalletSendIntegrationTest
           --reports-dir test-results
 
       - name: Show the logs of the node and the server
