@@ -1,5 +1,6 @@
 package monero.wallet
 
+import org.junit.jupiter.api.Tag
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,6 +20,7 @@ import monero.wallet.model.MoneroWalletConfig
  * listens on, and skips when the dylib is not found. The tests that need the server are the integration tests of
  * MoneroWalletLightIntegrationTest, which mirror the rest of the python light suite.
  */
+@Tag("unit")
 class MoneroWalletLightTest {
 
     // a connection to a port that nothing listens on: the wallet sees a server it is not connected to
