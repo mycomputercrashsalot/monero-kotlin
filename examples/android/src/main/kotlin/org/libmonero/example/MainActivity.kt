@@ -37,7 +37,10 @@ class MainActivity : Activity() {
         create = Button(this)
         create.text = "Create wallet"
         report = TextView(this)
-        report.text = "the daemon is editable; the default is the regtest node of the compose of monero-c\n"
+
+        // a rotation recreates the activity, so the report of the calls that ran before it is kept in the state
+        report.text = savedInstanceState?.getCharSequence("report")
+            ?: "the daemon is editable; the default is the regtest node of the compose of monero-c\n"
         report.textSize = 12f
 
         val pad = (resources.displayMetrics.density * 16).toInt()
@@ -103,6 +106,11 @@ class MainActivity : Activity() {
      *
      * @param line is the line to report
      */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putCharSequence("report", report.text)
+    }
+
     private fun report(line: String) {
         Log.i(TAG, line)
         runOnUiThread { report.text = report.text.toString() + line + "\n" }
