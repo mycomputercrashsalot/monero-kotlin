@@ -36,10 +36,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val server = EditText(this)
+        server.hint = "light wallet server"
         server.setText(BuildConfig.LWS_URI)
         val address = EditText(this)
+        address.hint = "primary address of the account"
         address.setText(BuildConfig.WALLET_ADDRESS)
         val viewKey = EditText(this)
+        viewKey.hint = "private view key of the account"
         viewKey.setText(BuildConfig.WALLET_VIEW_KEY)
         open = Button(this)
         open.text = "Open light wallet"
@@ -50,6 +53,8 @@ class MainActivity : Activity() {
         val pad = (resources.displayMetrics.density * 16).toInt()
         val layout = LinearLayout(this)
         layout.orientation = LinearLayout.VERTICAL
+        // the layout fits the windows of the system, which without this draws the first field under the action bar
+        layout.fitsSystemWindows = true
         layout.setPadding(pad, pad, pad, pad)
         layout.addView(server)
         layout.addView(address)
@@ -60,12 +65,17 @@ class MainActivity : Activity() {
         layout.addView(scroll)
         setContentView(layout)
 
+        // the report of a run survives a turn of the screen, which recreates the activity
+        if (savedInstanceState != null) report.text = savedInstanceState.getCharSequence("report")
+
         open.setOnClickListener {
             open.isEnabled = false
+            open.text = "Opening…"
             report.text = ""
             val serverUri = server.text.toString()
             val accountAddress = address.text.toString()
             val accountViewKey = viewKey.text.toString()
+            report("opening the wallet on $serverUri")
             Thread { openLightWallet(serverUri, accountAddress, accountViewKey) }.start()
         }
 
@@ -108,6 +118,7 @@ class MainActivity : Activity() {
         } finally {
             runOnUiThread {
                 open.isEnabled = true
+                open.text = "Open light wallet"
                 open.requestFocus()
             }
         }
