@@ -131,6 +131,9 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         return run { lib, h ->
             val height = LongByReference()
             MoneroNative.ok(lib.monero_wallet_get_height(h, height))
+            // the height is a number of blocks, which fits a long for the life of any chain: a negative read is a
+            // broken answer and not a height to hand out
+            if (height.value < 0) throw MoneroError("The wallet answered a height that does not fit a long")
             height.value
         }
     }
@@ -196,6 +199,8 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
         return run { lib, h ->
             val count = LongByReference()
             MoneroNative.ok(lib.monero_wallet_light_get_unrefined_spend_count(h, count))
+            // the count is a number of spends, which fits a long for any wallet: a negative read is a broken answer
+            if (count.value < 0) throw MoneroError("The wallet answered a spend count that does not fit a long")
             count.value
         }
     }
