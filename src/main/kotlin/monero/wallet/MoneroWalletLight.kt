@@ -244,6 +244,39 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     }
 
     /**
+     * Sign the transactions that [createTxs] made without relaying, from the hex of their unsigned set. The wallet
+     * has to hold the spend key of its address, which a wallet that only reads needs a wallet with the key for.
+     *
+     * @param unsignedTxHex is the hex of the unsigned set, which a transaction of [createTxs] carries
+     * @return the transactions of the signed set
+     * @throws MoneroError if the wallet is closed, the wallet has no spend key, or the hex is not the hex of an
+     * unsigned set
+     */
+    fun signTxs(unsignedTxHex: String): List<MoneroTxWallet> {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.json(lib.monero_wallet_sign_txs(h, unsignedTxHex, out), out, MoneroTxSetsResult::class.java)
+            result.getTxs()
+        }
+    }
+
+    /**
+     * Submit the transactions that [signTxs] signed, from the hex of their signed set, which the server relays.
+     *
+     * @param signedTxHex is the hex of the signed set, which a transaction of [signTxs] carries
+     * @return the hashes of the submitted transactions
+     * @throws MoneroError if the wallet is closed, or the server refuses a transaction
+     */
+    fun submitTxs(signedTxHex: String): List<String> {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.strings(lib.monero_wallet_submit_txs(h, signedTxHex, out), out)
+        }
+    }
+
+    /**
      * Get the number of candidate spends that the last sync could not verify, which is greater than zero only for a
      * view-only wallet without imported key images. While it is not zero, the balances are the ones of the server,
      * which the wallet can not refine.

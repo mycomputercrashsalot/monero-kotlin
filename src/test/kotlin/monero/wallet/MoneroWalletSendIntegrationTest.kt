@@ -54,9 +54,10 @@ class MoneroWalletSendIntegrationTest {
     // the mining wallet of monero-python's config.ini, which receives as a second account
     private val receiverSeed = "lush waffle neither siblings when sanity pencil grunt ghost fall rabbits adapt items ornament sequence nitrogen orders fall bagpipe width hope fainted hexagon imagine orders"
 
-    // the amounts to send, in atomic units: five and three monero, one per relay path
+    // the amounts to send, in atomic units: five, three and two monero, one per relay path
     private val firstAmount = BigInteger.valueOf(5000000000000L)
     private val secondAmount = BigInteger.valueOf(3000000000000L)
+    private val thirdAmount = BigInteger.valueOf(2000000000000L)
 
         private val connection: MoneroRpcConnection by lazy { MoneroRpcConnection(LwsSupport.lwsUri) }
 
@@ -149,18 +150,46 @@ class MoneroWalletSendIntegrationTest {
             val secondHash = assertNotNull(second.hash)
             assertEquals(secondHash, sender.relayTx(second))
 
+            // the third transaction goes the way of a wallet that only reads: a wallet with the view key alone
+            // builds it unsigned, and the wallet with the seed signs it and submits it
+            val viewOnlyConfig = MoneroWalletConfig()
+            viewOnlyConfig.networkType = MoneroNetworkType.MAINNET
+            viewOnlyConfig.primaryAddress = senderAddress
+            viewOnlyConfig.privateViewKey = sender.getPrivateViewKey()
+            val viewOnly = if (MoneroWalletLight.walletExists(viewOnlyConfig, connection)) {
+                MoneroWalletLight.openWallet(viewOnlyConfig, connection)
+            } else {
+                MoneroWalletLight.createWallet(viewOnlyConfig, connection)
+            }
+            val thirdFee: BigInteger
+            val thirdHash: String
+            viewOnly.use {
+                it.sync()
+                val unsignedTxs = it.createTxs(txConfig(0, receiverAddress, thirdAmount))
+                val unsigned = unsignedTxs.single()
+                val unsignedTxHex = assertNotNull(unsigned.txSet?.unsignedTxHex, "a wallet that only reads builds its transactions unsigned")
+                // the signature changes nothing of the transaction, so the fee of the signed one is the fee of the
+                // construction, which the unsigned set carries
+                thirdFee = assertNotNull(unsigned.fee)
+                val signedTxs = sender.signTxs(unsignedTxHex)
+                val signed = signedTxs.single()
+                val signedTxHex = assertNotNull(signed.txSet?.signedTxHex)
+                thirdHash = assertNotNull(signed.hash)
+                assertEquals(listOf(thirdHash), sender.submitTxs(signedTxHex))
+            }
+
             // a block holds the relayed transactions, and the receiver reads exactly what was sent
             RegtestSupport.mineBlocks(1, minerAddress)
             LwsSupport.waitScannedToChain(receiverAddress, receiver.getPrivateViewKey())
             receiver.sync()
-            assertEquals(receiverBefore.add(firstAmount).add(secondAmount), receiver.getBalance())
+            assertEquals(receiverBefore.add(firstAmount).add(secondAmount).add(thirdAmount), receiver.getBalance())
             val received = receiver.getTxs().single { tx -> tx.hash == relayedHash }
             assertEquals(true, received.isIncoming)
             assertEquals(firstAmount, received.incomingTransfers!!.single().amount)
 
             // the sender's balance is the one before, less the amounts and the fees
             sender.sync()
-            assertEquals(before.subtract(firstAmount).subtract(firstFee).subtract(secondAmount).subtract(secondFee), sender.getBalance())
+            assertEquals(before.subtract(firstAmount).subtract(firstFee).subtract(secondAmount).subtract(secondFee).subtract(thirdAmount).subtract(thirdFee), sender.getBalance())
             val sent = sender.getTxs().single { tx -> tx.hash == relayedHash }
             assertEquals(firstFee, sent.fee)
             assertEquals(false, sent.isIncoming)

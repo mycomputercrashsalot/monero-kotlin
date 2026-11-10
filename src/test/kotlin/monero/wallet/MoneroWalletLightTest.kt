@@ -135,6 +135,17 @@ class MoneroWalletLightTest {
     }
 
     @Test
+    fun relayTx_WithMetadataThatIsNotHex_IsAnError() {
+        val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
+        try {
+            val error = assertFailsWith<MoneroError> { wallet.relayTx("this is not hex") }
+            assertEquals("Failed to parse hex", error.message)
+        } finally {
+            wallet.close()
+        }
+    }
+
+    @Test
     fun createTxs_WithANegativeAmount_IsAnError() {
         val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
         try {
@@ -152,11 +163,22 @@ class MoneroWalletLightTest {
     }
 
     @Test
-    fun relayTx_WithMetadataThatIsNotHex_IsAnError() {
+    fun signTxs_WithHexThatIsNotAnUnsignedSet_IsAnError() {
         val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
         try {
-            val error = assertFailsWith<MoneroError> { wallet.relayTx("this is not hex") }
-            assertEquals("Failed to parse hex", error.message)
+            val error = assertFailsWith<MoneroError> { wallet.signTxs("this is not hex") }
+            assertEquals("Failed to parse hex.", error.message)
+        } finally {
+            wallet.close()
+        }
+    }
+
+    @Test
+    fun submitTxs_WithHexThatIsNotASignedSet_IsAnError() {
+        val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
+        try {
+            val error = assertFailsWith<MoneroError> { wallet.submitTxs("this is not hex") }
+            assertEquals("Failed to parse hex.", error.message)
         } finally {
             wallet.close()
         }
