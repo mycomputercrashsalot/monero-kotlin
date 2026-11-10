@@ -135,6 +135,23 @@ class MoneroWalletLightTest {
     }
 
     @Test
+    fun createTxs_WithANegativeAmount_IsAnError() {
+        val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
+        try {
+            val txConfig = MoneroTxConfig()
+            txConfig.accountIndex = 0
+            txConfig.destinations = listOf(
+                MoneroDestination("48W9YHwPzRz9aPTeXCA6kmSpW6HsvmWx578jj3of2gT3JwZzwTf33amESBoNDkL6SVK34Q2HTKqgYbGyE1hBws3wCrcBDR2", BigInteger.ONE),
+                MoneroDestination("49MNnnrtLzj5vsWsHya28tKFPTcYfEnEYLfCqogA6Dw1TeqvHv5uRPTgjXSyD9pSoPVae3oZe3R5xHsGeC4VapjRV2m6gGj", BigInteger.valueOf(-5))
+            )
+            val error = assertFailsWith<MoneroError> { wallet.createTxs(txConfig) }
+            assertEquals("The amount -5 of the config of the transaction is negative", error.message)
+        } finally {
+            wallet.close()
+        }
+    }
+
+    @Test
     fun relayTx_WithMetadataThatIsNotHex_IsAnError() {
         val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
         try {

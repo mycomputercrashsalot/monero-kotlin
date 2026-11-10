@@ -202,6 +202,11 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      */
     fun createTxs(config: MoneroTxConfig): List<MoneroTxWallet> {
         checkNotClosed()
+        // a negative amount crosses the c abi as a number that wraps around to almost 2^64, which the wallet takes
+        // for a huge one and answers with an error about the money it has, and not about the amount
+        for (amount in listOfNotNull(config.fee, config.belowAmount) + config.destinations.orEmpty().mapNotNull { it.amount }) {
+            if (amount.signum() < 0) throw MoneroError("The amount $amount of the config of the transaction is negative")
+        }
         return run { lib, h ->
             val out = PointerByReference()
             val result = MoneroNative.json(lib.monero_wallet_create_txs(h, MoneroJson.serialize(config), out), out, MoneroTxSetsResult::class.java)
