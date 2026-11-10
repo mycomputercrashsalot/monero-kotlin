@@ -100,7 +100,7 @@ class MainActivity : Activity() {
                 val result = wallet.sync()
                 report("synced: ${result.numBlocksFetched} blocks fetched, received money: ${result.receivedMoney}")
                 val balance = wallet.getBalance()
-                report("balance: $balance atomic units (~${MoneroUtils.atomicUnitsToXmr(BigInteger.valueOf(balance))} XMR)")
+                report("balance: $balance atomic units (~${MoneroUtils.atomicUnitsToXmr(balance)} XMR)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "the light wallet call failed", e)
