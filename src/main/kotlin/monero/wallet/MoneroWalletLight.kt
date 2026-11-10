@@ -36,6 +36,8 @@ import monero.wallet.model.MoneroWalletConfig
 class MoneroWalletLight private constructor(private val handle: Pointer) : AutoCloseable {
 
     private val worker = NativeWorker("MoneroWalletLight", "Wallet is closed")
+    // volatile: the calls read it from any thread, and the close writes it under its lock
+    @Volatile
     private var closed = false
 
     // ------------------------------- KEYS, SEED AND ADDRESSES ----------------------------------
@@ -105,7 +107,8 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     // ------------------------------- SYNC AND THE CHAIN ----------------------------------
 
     /**
-     * Synchronize the wallet with its light wallet server, on the thread of the caller.
+     * Synchronize the wallet with its light wallet server. The caller waits while the call runs on the
+     * thread of the wallet's calls.
      *
      * @param startHeight is the height to sync from, ignored when it is less than the height that the wallet has
      * already scanned
@@ -240,8 +243,9 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
 
     /**
      * Close the wallet, without saving it, since a light wallet has no files: closing it with a save is an error, and
-     * the wallet stays open. Every call of a closed wallet fails with "Wallet is closed", and closing it again does
-     * nothing.
+     * the wallet stays open. A close marks the wallet closed at once, and the calls that are in flight when it runs
+     * finish first: the close waits behind them on the thread of the wallet's calls. Every call of a closed wallet
+     * fails with "Wallet is closed", except the ones that need no wallet, and closing it again does nothing.
      *
      * @param save is whether to save the wallet before closing it, which a light wallet does not support, so it
      * has to be false
@@ -257,12 +261,20 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
             return
         }
 
-        // the calls of a closing wallet are refused before its handle dies, so a call that is in flight fails with
-        // the error and not on a freed handle
+        // the flag goes first, so the calls that start after it fail with the error and not on a freed handle. The
+        // close runs behind the calls that are in flight, since the wallet's thread runs them one after the other
         closed = true
-        run { lib, h -> MoneroNative.ok(lib.monero_wallet_close(h, save)) }
-        worker.close()
-        MoneroNative.lib.monero_wallet_free(handle)
+        try {
+            run { lib, h -> MoneroNative.ok(lib.monero_wallet_close(h, save)) }
+        } finally {
+            // the free runs on the thread of the wallet's calls, which the c abi gives one per handle, and a close
+            // that throws still frees: the flag says closed and a retry does nothing
+            try {
+                worker.call { MoneroNative.lib.monero_wallet_free(handle) }
+            } finally {
+                worker.close()
+            }
+        }
     }
 
     override fun close() {
