@@ -21,12 +21,15 @@ object LwsSupport {
 
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
 
-    // the rest server takes a while to come up after the compose starts it, so the probe retries for a minute
-    // before it skips. a server that answers but is not an lws fails the probe, since the version of an lws names
-    // its server type. the probe waits only while the server refuses the connection, or answers before monero-lws
-    // is ready
+    // the rest server takes a while to come up after the compose starts it, so the probe of a server that the
+    // environment names retries for a minute before it skips, since the workflow that names it is the one that boots
+    // it. the default uri gets three tries: a server that is not answering it in the workflow without one is not
+    // coming, and the minute would only hold the classes behind these tests back. a server that answers but is not
+    // an lws fails the probe, since the version of an lws names its server type. the probe waits only while the
+    // server refuses the connection, or answers before monero-lws is ready
     val isUp: Boolean by lazy {
-        (1..60).any {
+        val tries = if (System.getenv("MONERO_KOTLIN_TEST_LWS_URI") != null) 60 else 3
+        (1..tries).any {
             try {
                 val version = post("/get_version", "{}")
                 assertTrue(version.contains("\"server_type\":\"monero-lws\""), "the server at $lwsUri is not a monero-lws: $version")
