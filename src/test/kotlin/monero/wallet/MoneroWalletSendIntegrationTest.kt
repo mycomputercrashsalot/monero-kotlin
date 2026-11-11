@@ -150,6 +150,14 @@ class MoneroWalletSendIntegrationTest {
             val secondHash = assertNotNull(second.hash)
             assertEquals(secondHash, sender.relayTx(second))
 
+            // a block holds the two relayed transactions before the wallet that only reads builds the third: the
+            // server does not sync the pool, so its unspent outputs still name the ones that the two transactions
+            // spend, and a transaction built on them is a double spend that the server refuses. The blocks after it
+            // age the outputs of the chain, since a ring takes no decoy from a block that the chain has just added
+            RegtestSupport.mineBlocks(1, minerAddress)
+            RegtestSupport.mineBlocks(10, minerAddress)
+            LwsSupport.waitScannedToChain(senderAddress, sender.getPrivateViewKey())
+
             // the third transaction goes the way of a wallet that only reads: a wallet with the view key alone
             // builds it unsigned, and the wallet with the seed signs it and submits it
             val viewOnlyConfig = MoneroWalletConfig()
