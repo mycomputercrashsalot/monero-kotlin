@@ -80,10 +80,10 @@ jobs:
       - name: Check that the release is the pin of the submodule
         run: |
           pinned=$(git rev-parse HEAD:external/monero-c)
-          released=$(git ls-remote https://github.com/libmonero/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
-          test -n "$released" || { echo "::error::monero-c has no release v$MONERO_C_VERSION"; exit 1; }
+          released=$(git ls-remote https://github.com/mycomputercrashsalot/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
+          test -n "$released" || { echo "::error::the fork of monero-c has no release v$MONERO_C_VERSION"; exit 1; }
           if [ "$pinned" != "$released" ]; then
-            echo "::error::the submodule is at $pinned and v$MONERO_C_VERSION of monero-c is at $released: set MONERO_C_VERSION and the sha256 of native.yml, and MONERO_C_VERSION of android.yml, to the release of the submodule"
+            echo "::error::the submodule is at $pinned and v$MONERO_C_VERSION of the fork of monero-c is at $released: set MONERO_C_VERSION and the sha256 of native.yml, and MONERO_C_VERSION of android.yml, to the release of the submodule"
             exit 1
           fi
 
@@ -94,7 +94,7 @@ jobs:
           FILES: ${{ matrix.files }}
         run: |
           curl --retry 5 --retry-delay 5 --retry-max-time 150 -fsSL -o "$RUNNER_TEMP/$ARCHIVE" \
-            "https://github.com/libmonero/monero-c/releases/download/v$MONERO_C_VERSION/$ARCHIVE"
+            "https://github.com/mycomputercrashsalot/monero-c/releases/download/v$MONERO_C_VERSION/$ARCHIVE"
           echo "$SHA256  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c
           mkdir "$RUNNER_TEMP/archive"
           case "$ARCHIVE" in
