@@ -111,9 +111,16 @@ object RegtestSupport {
      * @throws MoneroError if the daemon does not mine them
      */
     fun mineBlocks(numBlocks: Int, address: String = MINING_ADDRESS) {
-        val params = mapOf("amount_of_blocks" to numBlocks, "wallet_address" to address, "starting_nonce" to 0)
-        val json = daemonConnection().use { it.sendJsonRequest("generateblocks", params, 180_000) }
-        val status = MoneroJson.mapper.readTree(json).path("status").asText()
-        if (status != "OK") throw MoneroError("generateblocks did not mine: $json")
+        // the daemon mines a large number of blocks slower than one call can wait for, so the blocks are mined in
+        // batches of 25 and a slow host stays inside the timeout of a call
+        var mined = 0
+        while (mined < numBlocks) {
+            val batch = minOf(25, numBlocks - mined)
+            val params = mapOf("amount_of_blocks" to batch, "wallet_address" to address, "starting_nonce" to 0)
+            val json = daemonConnection().use { it.sendJsonRequest("generateblocks", params, 180_000) }
+            val status = MoneroJson.mapper.readTree(json).path("status").asText()
+            if (status != "OK") throw MoneroError("generateblocks did not mine: $json")
+            mined += batch
+        }
     }
 }
