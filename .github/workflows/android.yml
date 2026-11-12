@@ -37,7 +37,7 @@ jobs:
       # The release of monero-c whose commit is the pin of the submodule, and the sha256 of its monero-native-android archive, which is in the
       # SHA256SUMS.txt of the release. Change both, and the version and the sha256 of native.yml, when the submodule moves to another release
       MONERO_C_VERSION: 0.4.0-alpha.1
-      MONERO_C_ANDROID_SHA256: 7fcecab32fd7ef85c28fae7b7a15fea6a0d5c8c10aa820411c48587fd4fc2a20
+      MONERO_C_ANDROID_SHA256: 69b55317b64d4cea30b16a7ef08b629dd135dfcb43f79f418f61d33612c1e355
 
     steps:
       - name: Checkout repository
