@@ -150,26 +150,35 @@ val stageMoneroC by tasks.registering(Sync::class) {
             }
 
             // the exported names are in the strings of the file, which ISO_8859_1 reads one byte to one char. The file
-            // is scanned in chunks with an overlap, since an unstripped build is hundreds of megabytes
-            var carriesTheAbi = false
+            // is scanned in chunks with an overlap, since an unstripped build is hundreds of megabytes. The shared
+            // sources of this module carry the light wallet, so the library has to export its symbols too, or the app
+            // would die at its first light wallet call instead of the build failing here
+            val required = setOf(
+                "monero_utils_get_abi_version",
+                "monero_wallet_light_create",
+                "monero_wallet_light_open",
+                "monero_wallet_light_wallet_exists",
+                "monero_wallet_light_get_unrefined_spend_count",
+            )
+            val missing = required.toMutableSet()
             library.inputStream().use { input ->
                 val chunk = ByteArray(1 shl 20)
                 var carry = ByteArray(0)
-                while (true) {
+                while (missing.isNotEmpty()) {
                     val n = input.read(chunk)
                     if (n < 0) break
                     val window = ByteArray(carry.size + n)
                     carry.copyInto(window)
                     chunk.copyInto(window, carry.size, 0, n)
-                    if (String(window, Charsets.ISO_8859_1).contains("monero_utils_get_abi_version")) {
-                        carriesTheAbi = true
-                        break
-                    }
+                    val strings = String(window, Charsets.ISO_8859_1)
+                    missing.removeIf { name -> strings.contains(name) }
                     carry = window.copyOfRange(maxOf(0, window.size - 64), window.size)
                 }
             }
-            if (!carriesTheAbi) {
-                throw GradleException("${abi.name}/libmonero_c.so does not export the C ABI of monero-c (monero_utils_get_abi_version)")
+            if (missing.isNotEmpty()) {
+                throw GradleException(
+                    "${abi.name}/libmonero_c.so does not export the C ABI of monero-c: ${missing.joinToString()}"
+                )
             }
         }
     }
