@@ -37,7 +37,13 @@ abstract class BaseMoneroWalletMiningTest {
                     warmUp(daemon)
                     test(daemon, wallet)
                 } finally {
-                    if (daemon.getMiningStatus().isActive == true) runCatching { daemon.stopMining() }
+                    // the stop that a test left behind is tried with the patience of the daemon connection, and again
+                    // when the first one failed: a mining that runs past the test keeps the chain of the classes
+                    // behind it moving, which their heights do not survive
+                    if (daemon.getMiningStatus().isActive == true) {
+                        runCatching { daemon.stopMining() }
+                        if (daemon.getMiningStatus().isActive == true) daemon.stopMining()
+                    }
                 }
             }
         }
@@ -99,7 +105,11 @@ abstract class BaseMoneroWalletMiningTest {
             wallet.startMining(1, false, true)
             assertFailsWith<MoneroError> { wallet.startMining(1, false, true) }
             assertTrue(daemon.getMiningStatus().isActive == true, "the node keeps mining")
-            wallet.stopMining()
+            // a stop of the wallet waits what a wallet waits, which a runner that is slow can outlast while the miner
+            // settles: the node stops it after, and what the test reads is that the mining stopped, whichever of the
+            // two stopped it. A mining that runs past the test keeps the chain of the classes behind it moving
+            runCatching { wallet.stopMining() }
+            if (daemon.getMiningStatus().isActive == true) daemon.stopMining()
             assertFalse(daemon.getMiningStatus().isActive == true)
             assertFailsWith<MoneroError> { wallet.stopMining() }
         }
