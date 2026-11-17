@@ -578,6 +578,23 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
             }
         }
 
+        /**
+         * Read the transactions that a relay of a light wallet already sent, from the error it threw when a later one
+         * failed. A relay and a sweep throw an error that names the transactions that reached the server before the
+         * failure, which no list the call returns names: the transactions are on the network and the wallet tracks
+         * them, and the caller that rebuilds learns from this what it must not send again.
+         *
+         * @param error is the error that a call of [MoneroWalletLight.relayTx], [MoneroWalletLight.submitTxs] or a
+         * sweep of a light wallet threw
+         * @return the hashes of the transactions that the server took, which is empty when the error names none
+         */
+        fun relayedHashes(error: MoneroError): List<String> {
+            val message = error.message ?: return emptyList()
+            val segment = message.substringAfter("already relayed: ", "").substringBefore("; ")
+            if (segment.isEmpty() || segment == message) return emptyList()
+            return segment.split(", ").filter { hash -> hash.length == 64 && hash.all { it.isDigit() || it in 'a'..'f' } }
+        }
+
         private fun requireNetworkType(config: MoneroWalletConfig) {
             if (config.networkType == null) throw MoneroError("Must provide wallet network type")
         }

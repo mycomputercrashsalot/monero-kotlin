@@ -210,6 +210,28 @@ class MoneroWalletLightTest {
         assertEquals(false, MoneroWalletLight.walletExists(config, offlineConnection))
     }
 
+    @Test
+    fun relayedHashes_ReadsTheTransactionsOfTheErrorOfARelay() {
+        // the three formats that a relay, a submit and a sweep throw, which name the transactions that
+        // the server took before one failed
+        val relay = MoneroError("failed to relay 1 of 2 transactions; already relayed: " + "a".repeat(64) + ", " + "b".repeat(64) + "; the server refused one: not enough money")
+        assertEquals(listOf("a".repeat(64), "b".repeat(64)), MoneroWalletLight.relayedHashes(relay))
+        val submit = MoneroError("the server did not relay 1 of 2 transactions; already relayed: " + "c".repeat(64) + "; not relayed: " + "d".repeat(64) + ": the daemon refused it")
+        assertEquals(listOf("c".repeat(64)), MoneroWalletLight.relayedHashes(submit))
+        val sweep = MoneroError("failed to sweep 1 of the remaining transactions; already relayed: " + "e".repeat(64) + "; need more money than found")
+        assertEquals(listOf("e".repeat(64)), MoneroWalletLight.relayedHashes(sweep))
+    }
+
+    @Test
+    fun relayedHashes_OfAnErrorThatNamesNone_IsEmpty() {
+        assertEquals(emptyList<String>(), MoneroWalletLight.relayedHashes(MoneroError("failed to relay 2 of 2 transactions; the server refused both")))
+        assertEquals(emptyList<String>(), MoneroWalletLight.relayedHashes(MoneroError("Wallet is closed")))
+        // a failure text that carries the words of the marker names no transaction, and a hash that is
+        // not one names none either
+        assertEquals(emptyList<String>(), MoneroWalletLight.relayedHashes(MoneroError("failed to relay 1 of 2 transactions; already relayed: not a hash; the server refused one")))
+        assertEquals(emptyList<String>(), MoneroWalletLight.relayedHashes(MoneroError("failed to relay 1 of 2 transactions; already relayed: , " + "f".repeat(63) + "; the server refused one")))
+    }
+
     // ------------------------------- SEND ----------------------------------
 
     @Test
