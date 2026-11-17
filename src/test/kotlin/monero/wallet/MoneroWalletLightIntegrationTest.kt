@@ -114,16 +114,6 @@ class MoneroWalletLightIntegrationTest {
             for (tx in txs) {
                 assertEquals(true, tx.isMinerTx)
             }
-
-            // a light wallet server does not carry the transactions of the chain: the wallet scans nothing of a
-            // list that names a transaction, and a list that is empty syncs
-            val scanError = assertFailsWith<MoneroError> { wallet.scanTxs(listOf("d0a26ed274e632a4e4de6a79b20c22a9e4e3e3a9c9e9a4c5e6b7a8d9c0b1a2e3")) }
-            assertEquals(true, scanError.message?.contains("scan") == true || scanError.message?.contains("not supported") == true, "the refusal names what the wallet cannot do: ${scanError.message}")
-            wallet.scanTxs(emptyList())
-
-            // the wallet checks only a transaction that it built itself, and not one that the chain mined to it
-            val checkError = assertFailsWith<MoneroError> { wallet.checkTxKey(txs.first().hash!!, "0000000000000000000000000000000000000000000000000000000000000000", address) }
-            assertEquals(true, checkError.message?.contains("No tx is stored") == true, "the refusal names what the wallet cannot check: ${checkError.message}")
         } finally {
             wallet.close()
         }

@@ -561,8 +561,8 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
          *
          * @param config is the configuration of the wallet to look for
          * @param connection is the connection to the light wallet server
-         * @return true if the server has the wallet, false otherwise, which a server that does not answer also says
-         * @throws MoneroError if the configuration is invalid
+         * @return true if the server has the wallet, false otherwise
+         * @throws MoneroError if the configuration is invalid, or the server does not answer
          */
         fun walletExists(config: MoneroWalletConfig, connection: MoneroRpcConnection): Boolean {
             requireNetworkType(config)

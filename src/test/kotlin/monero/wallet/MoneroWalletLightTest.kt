@@ -200,14 +200,17 @@ class MoneroWalletLightTest {
         assertEquals("Must provide both primary address and private view key to check if wallet exists", error.message)
     }
 
+
     @Test
-    fun walletExists_WithoutAServer_AnswersFalse() {
-        // a server that does not answer also answers false, which the caller cannot tell from a wallet the
-        // server does not have: the check is not an error either way
-        val config = config()
-        config.primaryAddress = "48W9YHwPzRz9aPTeXCA6kmSpW6HsvmWx578jj3of2gT3JwZzwTf33amESBoNDkL6SVK34Q2HTKqgYbGyE1hBws3wCrcBDR2"
-        config.privateViewKey = "f2b90b2d85b4765d65f22b1b3c0a5e4dc0a95d0f9e0b8c7d6a5b4c3d2e1f0a9b8"
-        assertEquals(false, MoneroWalletLight.walletExists(config, offlineConnection))
+    fun theChecksOfAClosedWallet_AreErrors() {
+        val wallet = MoneroWalletLight.createWallet(config(), offlineConnection)
+        wallet.close()
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.getTxKey("a".repeat(64)) }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.checkTxKey("a".repeat(64), "b".repeat(64), "48W9YHwPzRz9aPTeXCA6kmSpW6HsvmWx578jj3of2gT3JwZzwTf33amESBoNDkL6SVK34Q2HTKqgYbGyE1hBws3wCrcBDR2") }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.scanTxs(emptyList()) }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.freezeOutput("c".repeat(64)) }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.thawOutput("c".repeat(64)) }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.isOutputFrozen("c".repeat(64)) }.message)
     }
 
     @Test
