@@ -188,6 +188,11 @@ class MoneroWalletSendIntegrationTest {
             var thirdFee: BigInteger? = null
             var thirdHash: String? = null
             viewOnly.use {
+                // the wallet that only reads cannot sign what it builds, so a transaction that it submits is
+                // garbage that the server refuses: the wallet refuses the relay before it builds anything
+                val relayConfig = txConfig(0, receiverAddress, firstAmount)
+                relayConfig.relay = true
+                assertEquals("Cannot relay from a view-only wallet", assertFailsWith<MoneroError> { viewOnly.createTxs(relayConfig) }.message)
                 // the build and the submit are tried again when the server refuses the transaction: a scan that a
                 // slower runner waits behind can leave the unspent outputs or the rings of the chain too young for
                 // the node, and the blocks between the tries settle both
