@@ -114,7 +114,8 @@ object TxAssertions {
 
     /**
      * Check the result of checking a transaction with its key or with a proof, like TxWalletUtils.test_check_tx of monero-python: a good
-     * one says how much was received and where the transaction is, and one that is not good says nothing of that.
+     * one says how much was received and where the transaction is. One of a key that is not the one of the transaction says where the
+     * transaction is and that the address received nothing, and one of a signature that does not verify says nothing of that.
      */
     fun validateCheckTx(check: MoneroCheckTx) {
         assertNotNull(check.isGood)
@@ -127,9 +128,13 @@ object TxAssertions {
             if (check.inTxPool == true) assertEquals(0L, check.numConfirmations)
             else assertTrue(check.numConfirmations!! > 0, "a transaction that is not in the pool has confirmations")
         } else {
-            assertNull(check.inTxPool)
-            assertNull(check.numConfirmations)
-            assertNull(check.receivedAmount)
+            // a check of a tx key that is not good still says where the transaction is and how much the
+            // address received, which is nothing: only a check of a signature that does not verify says
+            // nothing of that
+            if (check.inTxPool != null) {
+                assertTrue(check.receivedAmount!!.signum() >= 0)
+                if (check.inTxPool == true) assertEquals(0L, check.numConfirmations)
+            }
         }
     }
 

@@ -138,12 +138,18 @@ abstract class BaseMoneroWalletProofsTest {
         assertEquals("Tx key has invalid format", assertFailsWith<MoneroError> { wallet.checkTxKey(tx.hash!!, "invalid_tx_key", destination.address!!) }.message)
         assertEquals("Invalid address", assertFailsWith<MoneroError> { wallet.checkTxKey(tx.hash!!, key, "invalid_tx_address") }.message)
 
-        // an address that the transaction did not pay: the check is good and nothing was received
+        // an address of another destination of the wallet: the fixture reuses its addresses, so the
+        // transaction may have paid it too, and the check is good exactly when it received something
         val other = wallet.getTxs().flatMap { it.outgoingTransfer?.destinations ?: emptyList() }.map { it.address!! }.first { it != destination.address }
         val different = wallet.checkTxKey(tx.hash!!, key, other)
         TxAssertions.validateCheckTx(different)
-        assertEquals(true, different.isGood)
-        assertTrue(different.receivedAmount!!.signum() >= 0)
+        if (tx.outgoingTransfer!!.destinations!!.any { it.address == other }) {
+            assertEquals(true, different.isGood)
+            assertTrue(different.receivedAmount!!.signum() > 0)
+        } else {
+            assertEquals(false, different.isGood)
+            assertEquals(BigInteger.ZERO, different.receivedAmount)
+        }
     }
 
     // The key of a transaction that the wallet did not send is not one it has, and the key of another transaction proves no payment
@@ -160,8 +166,8 @@ abstract class BaseMoneroWalletProofsTest {
         val keyOfAnother = wallet.getTxKey(sent[1].hash!!)
         val check = wallet.checkTxKey(tx.hash!!, keyOfAnother, address)
         TxAssertions.validateCheckTx(check)
-        // wallet2 checks any key: the answer is good, and the address received nothing with it
-        assertEquals(true, check.isGood)
+        // the key of another transaction proves no payment: the answer is not good, and the address received nothing with it
+        assertEquals(false, check.isGood)
         assertEquals(BigInteger.ZERO, check.receivedAmount, "the key of another transaction proves no payment")
     }
 
