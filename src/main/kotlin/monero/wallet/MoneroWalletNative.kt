@@ -87,8 +87,10 @@ abstract class MoneroWalletNative internal constructor(internal val handle: Poin
      * @throws MoneroError if the wallet is closed
      */
     override fun addListener(listener: MoneroWalletListener) {
-        checkNotClosed()
+        // the check is inside the lock, since the close clears the listeners under it: a check that passes outside
+        // races a close that clears the map and frees the handle under the lock this path is about to take
         synchronized(listeners) {
+            checkNotClosed()
             if (listener in listeners) return
             val events = WalletEvents(listener)
             try {
@@ -108,8 +110,9 @@ abstract class MoneroWalletNative internal constructor(internal val handle: Poin
      * @throws MoneroError if the wallet is closed, or the listener is not registered
      */
     override fun removeListener(listener: MoneroWalletListener) {
-        checkNotClosed()
+        // the same check under the same lock as the one of the add, for the same reason
         synchronized(listeners) {
+            checkNotClosed()
             val events = listeners[listener] ?: throw MoneroError("Listener is not registered with wallet")
             run { lib, h -> MoneroNative.ok(lib.monero_wallet_remove_listener(h, events.handle)) }
             listeners.remove(listener)

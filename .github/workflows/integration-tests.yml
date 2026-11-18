@@ -201,12 +201,13 @@ jobs:
     steps:
       # only monero-c is checked out, for its docker-compose.yml: the submodules of monero-c are not needed
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - name: Download the tests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: monero-kotlin-tests
           path: unit-tests
@@ -215,7 +216,7 @@ jobs:
 
       # the library, with the libusb that it needs next to it
       - name: Download monero-c
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: monero-c-linux-x86_64
           path: monero-c
@@ -233,7 +234,7 @@ jobs:
           echo "MONERO_C_LIBRARY=$PWD/monero-c/libmonero_c.so" >> "$GITHUB_ENV"
 
       - name: Set up Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 21
@@ -274,7 +275,8 @@ jobs:
           # the logs of the tests go in the results that are uploaded
           MONERO_KOTLIN_TEST_LOG_DIR: test-results/logs
         run: >
-          java -cp "unit-tests/lib/*" org.junit.platform.console.ConsoleLauncher execute
+          java -javaagent:unit-tests/jacoco/jacocoagent.jar=destfile=coverage/jacoco.exec,includes=monero.*
+          -cp "unit-tests/lib/*" org.junit.platform.console.ConsoleLauncher execute
           --disable-banner --details=summary
           --fail-if-no-tests
           --class-path unit-tests/classes/main
@@ -283,6 +285,22 @@ jobs:
           --select-class monero.wallet.MoneroWalletLightIntegrationTest
           --select-class monero.wallet.MoneroWalletSendIntegrationTest
           --reports-dir test-results
+
+      # the report that Codacy reads, from the classes that ran: the light wallet surface is covered only by these
+      # tests, which without the report leave the lines of its methods uncovered in the coverage of the library
+      - name: Make the coverage report
+        if: always() && hashFiles('coverage/jacoco.exec') != ''
+        run: |
+          mkdir light-coverage-reports
+          java -jar unit-tests/jacoco/jacococli.jar report coverage/jacoco.exec             --classfiles unit-tests/classes/main             --xml light-coverage-reports/jacocoTestReport.xml
+
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: light-coverage-reports
+          path: light-coverage-reports
+          if-no-files-found: ignore
 
       - name: Show the logs of the node and the server
         if: failure()
@@ -294,7 +312,7 @@ jobs:
 
       - name: Upload the results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: light-integration-test-results
           path: test-results

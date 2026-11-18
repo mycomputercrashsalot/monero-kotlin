@@ -191,6 +191,64 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
     }
 
     /**
+     * Sweep the unlocked funds of the wallet, of one of its accounts or of some of its subaddresses, into an
+     * address. The sweep makes as many transactions as the outputs need, and an output that the wallet froze is
+     * not swept: the sweep takes the unlocked and unfrozen money that the server lists. The transactions are
+     * relayed only when the config says so: a transaction that is not relayed carries the metadata that
+     * [relayTx] takes. A light wallet server does not sync the pool of its daemon, so a relayed transaction
+     * reaches the wallets when a block holds it.
+     *
+     * @param config is the configuration of the sweep, which names the account to sweep and the one address to
+     * sweep into, and says whether to relay
+     * @return the transactions that the sweep makes, with their fee and their metadata
+     * @throws MoneroError if the wallet is closed, it is not connected to the server, the configuration is
+     * invalid, the wallet is view-only and the config says to relay, or the wallet has no unlocked and unfrozen
+     * money to sweep
+     */
+    fun sweepUnlocked(config: MoneroTxConfig): List<MoneroTxWallet> {
+        checkNotClosed()
+        // the same refusal as the one of a transfer that relays: a wallet that only reads cannot sign what it
+        // builds, so what it would submit is garbage that the server refuses
+        if (config.relay == true && isViewOnly()) throw MoneroError("Cannot relay from a view-only wallet")
+        for (index in listOfNotNull(config.accountIndex) + config.subaddressIndices.orEmpty()) {
+            if (index < 0) throw MoneroError("The index $index of the config of the sweep is negative")
+        }
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.txSetsResult(lib.monero_wallet_sweep_unlocked(h, MoneroJson.serialize(config), out), out)
+            result.getTxs()
+        }
+    }
+
+    /**
+     * Sweep one output of the wallet, the one with the key image that the config names, into the one address
+     * that the config names. An output that the wallet froze is not swept: the sweep says the output is
+     * unspendable. The transaction is relayed only when the config says so: a transaction that is not relayed
+     * carries the metadata that [relayTx] takes.
+     *
+     * @param config is the configuration of the sweep, which names the key image of the output and the one
+     * address to sweep into, and says whether to relay
+     * @return the transaction that the sweep makes, with its fee and its metadata
+     * @throws MoneroError if the wallet is closed, it is not connected to the server, the configuration is
+     * invalid, the wallet is view-only and the config says to relay, or the output is spent, frozen or still
+     * locked
+     */
+    fun sweepOutput(config: MoneroTxConfig): MoneroTxWallet {
+        checkNotClosed()
+        // the same refusal as the one of a transfer that relays: a wallet that only reads cannot sign what it
+        // builds, so what it would submit is garbage that the server refuses
+        if (config.relay == true && isViewOnly()) throw MoneroError("Cannot relay from a view-only wallet")
+        for (index in listOfNotNull(config.accountIndex) + config.subaddressIndices.orEmpty()) {
+            if (index < 0) throw MoneroError("The index $index of the config of the sweep is negative")
+        }
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.txSetsResult(lib.monero_wallet_sweep_output(h, MoneroJson.serialize(config), out), out)
+            result.getTxs().singleOrNull() ?: throw MoneroError("monero-c did not create one transaction")
+        }
+    }
+
+    /**
      * Create one or more transactions that transfer funds from the wallet, through the RingCT construction of
      * monero-cpp. The transactions are relayed only when the config says so: a transaction that is not relayed
      * carries the metadata that [relayTx] takes. A light wallet server does not sync the

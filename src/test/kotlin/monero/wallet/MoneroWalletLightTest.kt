@@ -211,6 +211,8 @@ class MoneroWalletLightTest {
         assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.freezeOutput("c".repeat(64)) }.message)
         assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.thawOutput("c".repeat(64)) }.message)
         assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.isOutputFrozen("c".repeat(64)) }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.sweepUnlocked(MoneroTxConfig()) }.message)
+        assertEquals("Wallet is closed", assertFailsWith<MoneroError> { wallet.sweepOutput(MoneroTxConfig()) }.message)
     }
 
     @Test
