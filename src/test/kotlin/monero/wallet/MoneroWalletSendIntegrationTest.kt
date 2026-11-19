@@ -157,14 +157,21 @@ class MoneroWalletSendIntegrationTest {
             val checked = sender.checkTxKey(secondHash, secondKey, receiverAddress)
             assertEquals(true, checked.isGood)
             assertEquals(secondAmount, checked.receivedAmount)
-            // an output that the wallet freezes it reports frozen, and thaws again
+            // an output that the wallet freezes it reports frozen, its money leaves the balance that the
+            // wallet answers until it thaws, and it comes back with the thaw
             val keyImage = sender.getTxs(MoneroTxQuery().apply { includeOutputs = true }).firstNotNullOfOrNull { tx -> tx.outputs?.firstNotNullOfOrNull { output -> output.keyImage?.hex } }
             assertNotNull(keyImage, "the wallet has outputs with key images after it mined")
             assertEquals(false, sender.isOutputFrozen(keyImage!!))
+            val frozenBalanceBefore = sender.getBalance()
+            val frozenUnlockedBefore = sender.getUnlockedBalance()
             sender.freezeOutput(keyImage)
             assertEquals(true, sender.isOutputFrozen(keyImage))
+            val frozenAmount = (sender.getTxs(MoneroTxQuery().apply { includeOutputs = true }).single { tx -> tx.outputs.orEmpty().any { it.keyImage?.hex == keyImage } }.outputs!!.single { it.keyImage?.hex == keyImage } as monero.wallet.model.MoneroOutputWallet).amount
+            assertEquals(frozenBalanceBefore.subtract(frozenAmount), sender.getBalance(), "the balance drops by the frozen amount")
+            assertEquals(frozenUnlockedBefore.subtract(frozenAmount), sender.getUnlockedBalance(), "the unlocked balance drops by the frozen amount")
             sender.thawOutput(keyImage)
             assertEquals(false, sender.isOutputFrozen(keyImage))
+            assertEquals(frozenBalanceBefore, sender.getBalance(), "the balance comes back with the thaw")
 
             // a block holds the two relayed transactions before the wallet that only reads builds the third: the
             // server does not sync the pool, so its unspent outputs still name the ones that the two transactions
