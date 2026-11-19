@@ -15,6 +15,9 @@ import monero.daemon.model.MoneroNetworkType
 import monero.internal.MoneroC
 import monero.internal.MoneroNative
 import monero.internal.NativeWorker
+import monero.daemon.model.MoneroKeyImage
+import monero.wallet.model.MoneroKeyImageExportResult
+import monero.wallet.model.MoneroKeyImageImportResult
 import monero.wallet.model.MoneroSyncResult
 import monero.wallet.model.MoneroTxConfig
 import monero.wallet.model.MoneroTxQuery
@@ -404,6 +407,38 @@ class MoneroWalletLight private constructor(private val handle: Pointer) : AutoC
      * @param keyImage is the key image of the output to freeze
      * @throws MoneroError if the wallet is closed, or it does not have the output of the key image
      */
+    /**
+     * Export the signed key images of the wallet, which a wallet that only reads imports to know which of
+     * its outputs were spent. The signature of each one is made over the one-time key of the output it
+     * spends, which the server checks: a signature that the export made over another key never passes
+     * the check.
+     *
+     * @param all is true to export all the key images, and false to export the ones since the last export
+     * @return the key images, and the index of the first among the outputs of the wallet
+     * @throws MoneroError if the wallet is closed, or it is not connected to the server
+     */
+    fun exportKeyImages(all: Boolean): MoneroKeyImageExportResult {
+        checkNotClosed()
+        return json { lib, h, out -> lib.monero_wallet_export_key_images(h, all, out) }
+    }
+
+    /**
+     * Import the signed key images of the outputs of the wallet, which the wallet that holds the spend
+     * key exported, and check which of the outputs they spend. The wallet that only reads cannot sign
+     * them itself: without the import it cannot know its spent money, and its balance says that money
+     * it spent is still there.
+     *
+     * @param keyImages are the key images to import
+     * @param offset is the index of the first key image among the outputs of the wallet
+     * @return the height of the wallet, and the amounts that the key images spent and left unspent
+     * @throws MoneroError if the wallet is closed, the key images are not valid, or their signatures do
+     * not pass the check of the server
+     */
+    fun importKeyImages(keyImages: List<MoneroKeyImage>, offset: Long): MoneroKeyImageImportResult {
+        checkNotClosed()
+        return json { lib, h, out -> lib.monero_wallet_import_key_images(h, MoneroJson.serialize(keyImages), offset, out) }
+    }
+
     fun freezeOutput(keyImage: String) {
         checkNotClosed()
         run { lib, h -> MoneroNative.ok(lib.monero_wallet_freeze_output(h, keyImage)) }

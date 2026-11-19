@@ -193,6 +193,17 @@ class MoneroWalletSendIntegrationTest {
                 val relayConfig = txConfig(0, receiverAddress, firstAmount)
                 relayConfig.relay = true
                 assertEquals("Cannot relay from a view-only wallet", assertFailsWith<MoneroError> { viewOnly.createTxs(relayConfig) }.message)
+
+                // the wallet that holds the spend key signs the key images of its spent outputs, and the
+                // wallet that only reads imports them to know its spent money: a signature made over
+                // another key than the one-time key of the output never passes the check of the server
+                sender.sync()
+                val exported = sender.exportKeyImages(true)
+                assertTrue(exported.keyImages!!.isNotEmpty(), "the wallet that spent has key images to export")
+                it.sync()
+                val imported = it.importKeyImages(exported.keyImages!!, exported.offset ?: 0)
+                assertNotNull(imported.height)
+                assertTrue((imported.spentAmount ?: BigInteger.ZERO) > BigInteger.ZERO, "the wallet that only reads sees the spent money: ${imported.spentAmount}")
                 // the build and the submit are tried again when the server refuses the transaction: a scan that a
                 // slower runner waits behind can leave the unspent outputs or the rings of the chain too young for
                 // the node, and the blocks between the tries settle both
