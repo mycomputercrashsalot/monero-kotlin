@@ -158,15 +158,18 @@ class MoneroWalletSendIntegrationTest {
             assertEquals(true, checked.isGood)
             assertEquals(secondAmount, checked.receivedAmount)
             // an output that the wallet freezes it reports frozen, its money leaves the balance that the
-            // wallet answers until it thaws, and it comes back with the thaw
-            val keyImage = sender.getTxs(MoneroTxQuery().apply { includeOutputs = true }).firstNotNullOfOrNull { tx -> tx.outputs?.firstNotNullOfOrNull { output -> output.keyImage?.hex } }
-            assertNotNull(keyImage, "the wallet has outputs with key images after it mined")
-            assertEquals(false, sender.isOutputFrozen(keyImage!!))
+            // wallet answers until it thaws, and it comes back with the thaw. the output that the freeze
+            // takes is one that the wallet says is unspent and that it knows the key image of, which is
+            // money the balance counts: a spent one would leave the balance where it was
+            val picked = sender.getTxs(MoneroTxQuery().apply { includeOutputs = true }).asSequence().flatMap { tx -> tx.outputs.orEmpty().asSequence() }.filterIsInstance<monero.wallet.model.MoneroOutputWallet>().filter { output -> output.isSpent != true }.mapNotNull { output -> output.keyImage?.hex?.let { image -> output to image } }.firstOrNull { (_, image) -> sender.getTxs().asSequence().flatMap { tx -> tx.inputs.orEmpty().asSequence() }.mapNotNull { input -> input.keyImage?.hex }.none { inputImage -> inputImage == image } }
+            assertNotNull(picked, "the wallet has an unspent output with a key image after it mined")
+            val (pickedOutput, keyImage) = picked
+            assertEquals(false, sender.isOutputFrozen(keyImage))
             val frozenBalanceBefore = sender.getBalance()
             val frozenUnlockedBefore = sender.getUnlockedBalance()
             sender.freezeOutput(keyImage)
             assertEquals(true, sender.isOutputFrozen(keyImage))
-            val frozenAmount = (sender.getTxs(MoneroTxQuery().apply { includeOutputs = true }).single { tx -> tx.outputs.orEmpty().any { it.keyImage?.hex == keyImage } }.outputs!!.single { it.keyImage?.hex == keyImage } as monero.wallet.model.MoneroOutputWallet).amount
+            val frozenAmount = pickedOutput.amount
             assertEquals(frozenBalanceBefore.subtract(frozenAmount), sender.getBalance(), "the balance drops by the frozen amount")
             assertEquals(frozenUnlockedBefore.subtract(frozenAmount), sender.getUnlockedBalance(), "the unlocked balance drops by the frozen amount")
             sender.thawOutput(keyImage)
