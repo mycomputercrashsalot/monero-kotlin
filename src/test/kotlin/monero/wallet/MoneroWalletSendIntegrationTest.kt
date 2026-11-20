@@ -157,6 +157,14 @@ class MoneroWalletSendIntegrationTest {
             val checked = sender.checkTxKey(secondHash, secondKey, receiverAddress)
             assertEquals(true, checked.isGood)
             assertEquals(secondAmount, checked.receivedAmount)
+            // a key that is not the one of the tx receives nothing, which the check says with its flag and
+            // not with an error: a proof built on the flag refuses a fake one
+            val wrongKey = sender.getTxKey(firstHash)
+            if (wrongKey != null && wrongKey != secondKey) {
+                val wrongKeyCheck = sender.checkTxKey(secondHash, wrongKey, receiverAddress)
+                assertEquals(false, wrongKeyCheck.isGood)
+                assertEquals(BigInteger.ZERO, wrongKeyCheck.receivedAmount)
+            }
             // an output that the wallet freezes it reports frozen, its money leaves the balance that the
             // wallet answers until it thaws, and it comes back with the thaw. the output that the freeze
             // takes is one that the wallet says is unspent and that it knows the key image of, which is
