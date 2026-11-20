@@ -11,6 +11,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import monero.common.MoneroError
 import monero.common.MoneroJson
 import monero.common.MoneroRpcConnection
+import monero.common.MoneroUtils
 import monero.daemon.model.MoneroNetworkType
 import monero.daemon.model.MoneroVersion
 import monero.internal.MoneroC
@@ -929,6 +930,11 @@ abstract class MoneroWalletNative internal constructor(internal val handle: Poin
      */
     override fun createTxs(config: MoneroTxConfig): List<MoneroTxWallet> {
         checkNotClosed()
+        // an amount that the c abi cannot carry, or that no destination can hold, is refused here with the
+        // amount in the error, and not with an error about the money the wallet has: a negative amount
+        // crosses the abi as a number that wraps around to almost 2^64, and one at or above 2^64 does not
+        // cross at all
+        MoneroUtils.validateTxConfig(config)
         return run { lib, h ->
             val out = PointerByReference()
             val result = MoneroNative.txSetsResult(lib.monero_wallet_create_txs(h, MoneroJson.serialize(config), out), out)
@@ -947,6 +953,9 @@ abstract class MoneroWalletNative internal constructor(internal val handle: Poin
      */
     override fun sweepOutput(config: MoneroTxConfig): MoneroTxWallet {
         checkNotClosed()
+        // the same refusal as the one of a transfer, since a sweep carries the same config across the same
+        // abi
+        MoneroUtils.validateTxConfig(config)
         return run { lib, h ->
             val out = PointerByReference()
             MoneroNative.txSetsResult(lib.monero_wallet_sweep_output(h, MoneroJson.serialize(config), out), out)
@@ -965,6 +974,9 @@ abstract class MoneroWalletNative internal constructor(internal val handle: Poin
      */
     override fun sweepUnlocked(config: MoneroTxConfig): List<MoneroTxWallet> {
         checkNotClosed()
+        // the same refusal as the one of a transfer, since a sweep carries the same config across the same
+        // abi
+        MoneroUtils.validateTxConfig(config)
         return run { lib, h ->
             val out = PointerByReference()
             MoneroNative.txSetsResult(lib.monero_wallet_sweep_unlocked(h, MoneroJson.serialize(config), out), out)
