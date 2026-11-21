@@ -11,17 +11,28 @@
 # the models cross the native ABI as JSON through their fields, and a field that minification renames is a property the ABI cannot read:
 # the names of the fields are the names of the JSON
 -keepclassmembers class monero.** { <fields>; <init>(); }
+# jackson fills and reads the properties of the models through their getters and setters, which minification renames: the property that
+# loses its accessor deserializes to null in silence, which no error says
+-keepclassmembers class monero.** {
+    public *** get*();
+    public void set*(...);
+}
 # jackson calls the methods that carry its annotations, which minification removes with the methods
 -keepclassmembers class monero.** {
     @com.fasterxml.jackson.annotation.JsonValue <methods>;
     @com.fasterxml.jackson.annotation.JsonCreator <methods>;
 }
-# the enumerations cross the abi as their index, which jackson reads through values()
--keepclassmembers enum monero.** {
+# the enumerations cross the abi as their index, which jackson reads through values(), and its own enumerations through their constants:
+# the ones of the library alone unbox, which turns the class into one that getEnumConstants() answers null for
+-keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 # the reified reads of the models carry their types in the signatures of their references
 -keepattributes Signature,RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,AnnotationDefault
+# minification rewrites the signature of a class that extends a renamed TypeReference to the erased form, which the constructor of
+# TypeReference reads as no type information at all: the class and its subclasses keep their names, which keeps the signatures whole
+-keep class com.fasterxml.jackson.core.type.TypeReference { *; }
+-keep class * extends com.fasterxml.jackson.core.type.TypeReference { *; }
 # jna references the classes of java.awt, which an android app does not carry
 -dontwarn java.awt.**
