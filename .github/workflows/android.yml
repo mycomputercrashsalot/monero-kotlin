@@ -37,7 +37,7 @@ jobs:
       # The release of monero-c whose commit is the pin of the submodule, and the sha256 of its monero-native-android archive, which is in the
       # SHA256SUMS.txt of the release. Change both, and the version and the sha256 of native.yml, when the submodule moves to another release
       MONERO_C_VERSION: 0.4.0-alpha.1
-      MONERO_C_ANDROID_SHA256: 7fcecab32fd7ef85c28fae7b7a15fea6a0d5c8c10aa820411c48587fd4fc2a20
+      MONERO_C_ANDROID_SHA256: 5e405f4fe077ca8b166d48aee682e8a75913a729fe2906a3a8a8ceeb3d79d3fe
 
     steps:
       - name: Checkout repository
@@ -49,7 +49,7 @@ jobs:
       - name: Check that the release is the pin of the submodule
         run: |
           pinned=$(git rev-parse HEAD:external/monero-c)
-          released=$(git ls-remote https://github.com/libmonero/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
+          released=$(git ls-remote https://github.com/mycomputercrashsalot/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
           test -n "$released" || { echo "::error::monero-c has no release v$MONERO_C_VERSION"; exit 1; }
           if [ "$pinned" != "$released" ]; then
             echo "::error::the submodule is at $pinned and v$MONERO_C_VERSION of monero-c is at $released: set MONERO_C_VERSION and MONERO_C_ANDROID_SHA256 of android.yml to the release of the submodule"
@@ -59,7 +59,7 @@ jobs:
       - name: Download the native library
         run: |
           curl --retry 5 --retry-delay 5 --retry-max-time 150 -fsSL -o "$RUNNER_TEMP/monero-native-android.aar" \
-            "https://github.com/libmonero/monero-c/releases/download/v$MONERO_C_VERSION/monero-native-android-$MONERO_C_VERSION.aar"
+            "https://github.com/mycomputercrashsalot/monero-c/releases/download/v$MONERO_C_VERSION/monero-native-android-$MONERO_C_VERSION.aar"
           echo "$MONERO_C_ANDROID_SHA256  $RUNNER_TEMP/monero-native-android.aar" | sha256sum -c
 
       - name: Set up Java
@@ -74,7 +74,7 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build the AAR and the example
-        run: ./gradlew -Pandroid -Pmonero.c.android.native="$RUNNER_TEMP/monero-native-android.aar" :android:assembleRelease :examples:android:assembleDebug --console=plain
+        run: ./gradlew -Pandroid -Pmonero.c.android.native="$RUNNER_TEMP/monero-native-android.aar" :android:assembleRelease :examples:android:assembleRelease --console=plain
 
       # the AAR has the classes of the library and the native library of both ABIs
       - name: Check the AAR
@@ -83,7 +83,7 @@ jobs:
           unzip -l "$aar" | grep -E 'jni/arm64-v8a/libmonero_c.so|jni/x86_64/libmonero_c.so|classes.jar'
           unzip -p "$aar" classes.jar > "$RUNNER_TEMP/classes.jar"
           unzip -l "$RUNNER_TEMP/classes.jar" | grep 'monero/wallet/MoneroWalletFull.class'
-          unzip -l examples/android/build/outputs/apk/debug/android-debug.apk | grep -E 'lib/(arm64-v8a|x86_64)/libmonero_c.so'
+          unzip -l examples/android/build/outputs/apk/release/android-release-unsigned.apk | grep -E 'lib/(arm64-v8a|x86_64)/libmonero_c.so'
 
       - name: Upload the AAR
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

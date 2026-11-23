@@ -47,27 +47,27 @@ jobs:
           - name: Linux x86_64
             arch: linux-x86_64
             extension: tar.gz
-            sha256: 9a15cdfee172232d120919b4b78c61db59220a764bd25bbf98126009abcdbf30
+            sha256: be8604749c81079f3383559b2c45a561779675bc23e6f34f48e97b48e0adb15a
             files: libmonero_c.so libusb-1.0.so.0
           - name: Linux arm64
             arch: linux-arm64
             extension: tar.gz
-            sha256: 8360918e15e18281836641ebcab6f166c0a24dd2928328d497d1eb8bed756e5c
+            sha256: 3254c4f02c7d9835ce6afc63dd1e40f41b2ee82c955a15e4ea2edac89fd3f177
             files: libmonero_c.so libusb-1.0.so.0
           - name: macOS arm64
             arch: mac-arm64
             extension: tar.gz
-            sha256: 92198b0770ade57e3002308b2288744fe13fa26b3e9025bc67dbad417950cd57
+            sha256: 595cd60c63edb2c49c24ba7d05dd29ee649212b5f652b182b4573af57ffe2b36
             files: libmonero_c.dylib libusb-1.0.0.dylib
           - name: macOS x86_64
             arch: mac-x86_64
             extension: tar.gz
-            sha256: a836923644d7feab1669330066f48eb86087fa365fd5aa7994cf5b5a2f4cec16
+            sha256: 5d63e812c9de0f326afe1e98693fe4d8121c2d634507224c908df1034d7b1230
             files: libmonero_c.dylib libusb-1.0.0.dylib
           - name: Windows x86_64
             arch: windows
             extension: zip
-            sha256: c099c151833f4ace31d694d2d5759f1962d630b16200cd15adfba64ad705a837
+            sha256: 22d1332f3c40b6341e5aeb90426e2fdf00e3368e437bfc0cb63747be64fa1df2
             files: libmonero_c.dll libusb-1.0.dll
 
     steps:
@@ -80,10 +80,10 @@ jobs:
       - name: Check that the release is the pin of the submodule
         run: |
           pinned=$(git rev-parse HEAD:external/monero-c)
-          released=$(git ls-remote https://github.com/libmonero/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
-          test -n "$released" || { echo "::error::monero-c has no release v$MONERO_C_VERSION"; exit 1; }
+          released=$(git ls-remote https://github.com/mycomputercrashsalot/monero-c.git "refs/tags/v$MONERO_C_VERSION^{}" | cut -f1)
+          test -n "$released" || { echo "::error::the fork of monero-c has no release v$MONERO_C_VERSION"; exit 1; }
           if [ "$pinned" != "$released" ]; then
-            echo "::error::the submodule is at $pinned and v$MONERO_C_VERSION of monero-c is at $released: set MONERO_C_VERSION and the sha256 of native.yml, and MONERO_C_VERSION of android.yml, to the release of the submodule"
+            echo "::error::the submodule is at $pinned and v$MONERO_C_VERSION of the fork of monero-c is at $released: set MONERO_C_VERSION and the sha256 of native.yml, and MONERO_C_VERSION of android.yml, to the release of the submodule"
             exit 1
           fi
 
@@ -94,7 +94,7 @@ jobs:
           FILES: ${{ matrix.files }}
         run: |
           curl --retry 5 --retry-delay 5 --retry-max-time 150 -fsSL -o "$RUNNER_TEMP/$ARCHIVE" \
-            "https://github.com/libmonero/monero-c/releases/download/v$MONERO_C_VERSION/$ARCHIVE"
+            "https://github.com/mycomputercrashsalot/monero-c/releases/download/v$MONERO_C_VERSION/$ARCHIVE"
           echo "$SHA256  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c
           mkdir "$RUNNER_TEMP/archive"
           case "$ARCHIVE" in

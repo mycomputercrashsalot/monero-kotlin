@@ -37,7 +37,10 @@ internal object NativeBundle {
         val names = names(resource, prefix) ?: return null
         val target = directory ?: newDirectory()
         for (name in names) {
-            val input = loader.getResourceAsStream("$prefix/$name") ?: continue
+            // an entry that the listing has but the copy can not open is a broken classpath, and skipping it would leave the
+            // library without a file it needs or without itself, which fails later with no word of this one
+            val input = loader.getResourceAsStream("$prefix/$name")
+                ?: throw IOException("The file $name of the native bundle of monero-c can not be read from the classpath")
             input.use { Files.copy(it, target.resolve(name), StandardCopyOption.REPLACE_EXISTING) }
         }
         if (directory == null) deleteWhenTheProcessEnds(target)

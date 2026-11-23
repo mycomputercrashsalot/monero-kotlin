@@ -204,12 +204,16 @@ object RpcTestWallets : TestWallets {
     // the refresh of the server, which stopSyncing() of a wallet of a server stops, is of the server and not of one wallet, so it stays stopped for
     // the next wallets of that server, which sync when they are asked to
     private fun create(config: MoneroWalletConfig, server: Int, refreshes: Boolean = true): MoneroWalletNative {
+        // the server refreshes the wallet that opens on it by itself, from the daemon that it starts with and
+        // before the daemon of the config applies, which a wallet that has not synced can not have imported
+        // outputs into: the refresh of the server stops before the wallet opens, and the wallets that refresh
+        // ask for it themselves
+        if (!refreshes) RegtestSupport.walletRpcConnection(server).use { it.sendJsonRequest("auto_refresh", mapOf("enable" to false)) }
         val wallet = MoneroWalletRpc(RegtestSupport.walletRpcConnection(server))
         try {
             config.path = "kt-" + UUID.randomUUID().toString().replace("-", "")
             config.password = FullTestWallets.PASSWORD
             wallet.createWallet(config)
-            if (!refreshes) wallet.stopSyncing()
             return wallet
         } catch (e: Throwable) {
             runCatching { wallet.close() }

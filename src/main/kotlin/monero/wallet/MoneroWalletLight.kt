@@ -1,0 +1,710 @@
+package monero.wallet
+
+import com.fasterxml.jackson.core.type.TypeReference
+import com.sun.jna.Pointer
+import com.sun.jna.ptr.ByteByReference
+import com.sun.jna.ptr.IntByReference
+import com.sun.jna.ptr.LongByReference
+import com.sun.jna.ptr.PointerByReference
+import java.math.BigInteger
+import monero.common.MoneroError
+import monero.common.MoneroJson
+import monero.internal.SizeT
+import monero.common.MoneroRpcConnection
+import monero.daemon.model.MoneroNetworkType
+import monero.internal.MoneroC
+import monero.internal.MoneroNative
+import monero.internal.NativeWorker
+import monero.daemon.model.MoneroKeyImage
+import monero.wallet.model.MoneroKeyImageExportResult
+import monero.wallet.model.MoneroKeyImageImportResult
+import monero.wallet.model.MoneroSyncResult
+import monero.wallet.model.MoneroTxConfig
+import monero.wallet.model.MoneroTxQuery
+import monero.wallet.model.MoneroTxWallet
+import monero.wallet.model.MoneroWalletBlocksResult
+import monero.wallet.model.MoneroWalletConfig
+import monero.wallet.model.MoneroCheckTx
+
+/**
+ * Implements a light wallet: the keys and the addresses of an account, scanned through a
+ * [monero-lws](https://github.com/vtnerd/monero-lws) server, which is why the wallet needs no monerod and no wallet
+ * files of its own. It is the light wallet of monero-cpp behind the C ABI of monero-c, created or opened with the
+ * connection of the server. Close it to release the native handle.
+ *
+ * The wallet lives in memory: closing it with a save is an error, and a wallet that is opened again supplies the
+ * restore height of its first scan, which no file keeps. The getters read the cache of the wallet, so a fresh handle
+ * has to sync with the server before its balances.
+ *
+ * The calls of a wallet run one after the other on a thread of their own, since the C ABI allows one thread per
+ * wallet handle.
+ */
+class MoneroWalletLight private constructor(private val handle: Pointer) : AutoCloseable {
+
+    private val worker = NativeWorker("MoneroWalletLight", "Wallet is closed")
+    // volatile: the calls read it from any thread, and the close writes it under its lock
+    @Volatile
+    private var closed = false
+
+    // ------------------------------- KEYS, SEED AND ADDRESSES ----------------------------------
+
+    /**
+     * Get the mnemonic seed of the wallet.
+     *
+     * @return the 25 words of the seed
+     * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed
+     */
+    fun getSeed(): String {
+        return secret { lib, h, out -> lib.monero_wallet_get_seed(h, out) }
+    }
+
+    /**
+     * Get the language that the seed of the wallet is written in.
+     *
+     * @return the name of the language
+     * @throws MoneroError if the wallet is closed, or it is view-only, which has no seed
+     */
+    fun getSeedLanguage(): String {
+        return string { lib, h, out -> lib.monero_wallet_get_seed_language(h, out) }
+    }
+
+    /**
+     * Get the languages that a seed can be written in. The call needs no wallet, since monero-c has the list of the
+     * languages itself.
+     *
+     * @return the names of the languages
+     * @throws MoneroError if the native library fails
+     */
+    fun getSeedLanguages(): List<String> {
+        val out = PointerByReference()
+        return MoneroNative.strings(MoneroNative.lib.monero_wallet_get_seed_languages(out), out)
+    }
+
+    /**
+     * Get the private view key of the wallet.
+     *
+     * @return the key in hexadecimal
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getPrivateViewKey(): String {
+        return secret { lib, h, out -> lib.monero_wallet_get_private_view_key(h, out) }
+    }
+
+    /**
+     * Get the private spend key of the wallet.
+     *
+     * @return the key in hexadecimal
+     * @throws MoneroError if the wallet is closed, or it is view-only, which has no spend key
+     */
+    fun getPrivateSpendKey(): String {
+        return secret { lib, h, out -> lib.monero_wallet_get_private_spend_key(h, out) }
+    }
+
+    /**
+     * Get the primary address of the wallet, which is the address of account 0 and subaddress 0.
+     *
+     * @return the primary address
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getPrimaryAddress(): String {
+        return string { lib, h, out -> lib.monero_wallet_get_primary_address(h, out) }
+    }
+
+    // ------------------------------- SYNC AND THE CHAIN ----------------------------------
+
+    /**
+     * Synchronize the wallet with its light wallet server. The caller waits while the call runs on the
+     * thread of the wallet's calls.
+     *
+     * @param startHeight is the height to sync from: a height below the one the wallet restores from asks the
+     * server to import the account from it again, which a server that charges for a rescan refuses with an error,
+     * and a height at or above it changes nothing
+     * @return the result of the sync
+     * @throws MoneroError if the wallet is closed, or it is not connected to the server
+     */
+    fun sync(startHeight: Long? = null): MoneroSyncResult {
+        checkNotClosed()
+        return json { lib, h, out -> lib.monero_wallet_sync(h, startHeight?.let { LongByReference(it) }, null, out) }
+    }
+
+    /**
+     * Get the height that the wallet has scanned to, which is the next block to scan.
+     *
+     * @return the height
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getHeight(): Long {
+        checkNotClosed()
+        return run { lib, h ->
+            val height = LongByReference()
+            MoneroNative.ok(lib.monero_wallet_get_height(h, height))
+            // the height is a number of blocks, which fits a long for the life of any chain: a negative read is a
+            // broken answer and not a height to hand out
+            if (height.value < 0) throw MoneroError("The wallet answered a height that does not fit a long")
+            height.value
+        }
+    }
+
+    /**
+     * Get the balance of the wallet, including the funds that are still locked.
+     *
+     * @return the balance in atomic units
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getBalance(): BigInteger {
+        checkNotClosed()
+        return run { lib, h ->
+            val balance = LongByReference()
+            MoneroNative.ok(lib.monero_wallet_get_balance(h, balance))
+            MoneroNative.unsigned(balance.value)
+        }
+    }
+
+    /**
+     * Get the unlocked balance of the wallet, which is the balance without the funds that are still locked.
+     *
+     * @return the unlocked balance in atomic units
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getUnlockedBalance(): BigInteger {
+        checkNotClosed()
+        return run { lib, h ->
+            val balance = LongByReference()
+            MoneroNative.ok(lib.monero_wallet_get_unlocked_balance(h, balance))
+            MoneroNative.unsigned(balance.value)
+        }
+    }
+
+    /**
+     * Get the transactions of the wallet. A block of the answer holds its miner
+     * transaction twice, in its transactions and as its miner transaction, which is the block model of monero-cpp:
+     * this flattens the transactions of the blocks.
+     *
+     * @param query is the query that the transactions have to match, or null for all of them
+     * @return the transactions of the wallet
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getTxs(query: MoneroTxQuery? = null): List<MoneroTxWallet> {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.json(lib.monero_wallet_get_txs(h, query?.let { MoneroJson.serialize(it) }, out), out, MoneroWalletBlocksResult::class.java)
+            result.getTxs()
+        }
+    }
+
+    /**
+     * Sweep the unlocked funds of the wallet, of one of its accounts or of some of its subaddresses, into an
+     * address. The sweep makes as many transactions as the outputs need, and an output that the wallet froze is
+     * not swept: the sweep takes the unlocked and unfrozen money that the server lists. The transactions are
+     * relayed only when the config says so: a transaction that is not relayed carries the metadata that
+     * [relayTx] takes. A light wallet server does not sync the pool of its daemon, so a relayed transaction
+     * reaches the wallets when a block holds it.
+     *
+     * @param config is the configuration of the sweep, which names the account to sweep and the one address to
+     * sweep into, and says whether to relay
+     * @return the transactions that the sweep makes, with their fee and their metadata
+     * @throws MoneroError if the wallet is closed, it is not connected to the server, the configuration is
+     * invalid, the wallet is view-only and the config says to relay, or the wallet has no unlocked and unfrozen
+     * money to sweep
+     */
+    fun sweepUnlocked(config: MoneroTxConfig): List<MoneroTxWallet> {
+        checkNotClosed()
+        // the same refusal as the one of a transfer that relays: a wallet that only reads cannot sign what it
+        // builds, so what it would submit is garbage that the server refuses
+        if (config.relay == true && isViewOnly()) throw MoneroError("Cannot relay from a view-only wallet")
+        for (index in listOfNotNull(config.accountIndex) + config.subaddressIndices.orEmpty()) {
+            if (index < 0) throw MoneroError("The index $index of the config of the sweep is negative")
+        }
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.txSetsResult(lib.monero_wallet_sweep_unlocked(h, MoneroJson.serialize(config), out), out)
+            result.getTxs()
+        }
+    }
+
+    /**
+     * Sweep one output of the wallet, the one with the key image that the config names, into the one address
+     * that the config names. An output that the wallet froze is not swept: the sweep says the output is
+     * unspendable. The transaction is relayed only when the config says so: a transaction that is not relayed
+     * carries the metadata that [relayTx] takes.
+     *
+     * @param config is the configuration of the sweep, which names the key image of the output and the one
+     * address to sweep into, and says whether to relay
+     * @return the transaction that the sweep makes, with its fee and its metadata
+     * @throws MoneroError if the wallet is closed, it is not connected to the server, the configuration is
+     * invalid, the wallet is view-only and the config says to relay, or the output is spent, frozen or still
+     * locked
+     */
+    fun sweepOutput(config: MoneroTxConfig): MoneroTxWallet {
+        checkNotClosed()
+        // the same refusal as the one of a transfer that relays: a wallet that only reads cannot sign what it
+        // builds, so what it would submit is garbage that the server refuses
+        if (config.relay == true && isViewOnly()) throw MoneroError("Cannot relay from a view-only wallet")
+        for (index in listOfNotNull(config.accountIndex) + config.subaddressIndices.orEmpty()) {
+            if (index < 0) throw MoneroError("The index $index of the config of the sweep is negative")
+        }
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.txSetsResult(lib.monero_wallet_sweep_output(h, MoneroJson.serialize(config), out), out)
+            result.getTxs().singleOrNull() ?: throw MoneroError("monero-c did not create one transaction")
+        }
+    }
+
+    /**
+     * Create one or more transactions that transfer funds from the wallet, through the RingCT construction of
+     * monero-cpp. The transactions are relayed only when the config says so: a transaction that is not relayed
+     * carries the metadata that [relayTx] takes. A light wallet server does not sync the
+     * pool of its daemon, so a relayed transaction reaches the wallets when a block holds it.
+     *
+     * @param config is the configuration of the transfer, which names the account to send from and the
+     * destinations, and says whether to relay
+     * @return the transactions that the config makes, with their fee and their metadata
+     * @throws MoneroError if the wallet is closed, it is not connected to the server, the configuration is invalid,
+     * the wallet is view-only and the config says to relay, or the wallet has less unlocked money than the transfer
+     * and its fee need
+     */
+    fun createTxs(config: MoneroTxConfig): List<MoneroTxWallet> {
+        checkNotClosed()
+        // a view-only wallet cannot sign what it builds, so a transaction that it submits is garbage that the
+        // server refuses: it builds the unsigned set instead, which a full wallet signs and submits
+        if (config.relay == true && isViewOnly()) throw MoneroError("Cannot relay from a view-only wallet")
+        // an amount that the c abi cannot carry, or that no destination can hold, is refused here with the amount
+        // in the error, and not with an error about the money the wallet has: a negative amount crosses the abi as
+        // a number that wraps around to almost 2^64, and one at or above 2^64 does not cross at all
+        for (amount in listOfNotNull(config.fee, config.belowAmount) + config.destinations.orEmpty().mapNotNull { it.amount }) {
+            if (amount.signum() < 0) throw MoneroError("The amount $amount of the config of the transaction is negative")
+            if (amount.bitLength() > 64) throw MoneroError("The amount $amount of the config of the transaction is at or above 2^64")
+        }
+        for (destination in config.destinations.orEmpty()) {
+            val amount = destination.amount ?: continue
+            if (amount.signum() == 0) throw MoneroError("The destination of the amount zero is not a transfer")
+        }
+        for (index in listOfNotNull(config.accountIndex) + config.subaddressIndices.orEmpty() + config.subtractFeeFrom.orEmpty()) {
+            if (index < 0) throw MoneroError("The index $index of the config of the transaction is negative")
+        }
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.txSetsResult(lib.monero_wallet_create_txs(h, MoneroJson.serialize(config), out), out)
+            result.getTxs()
+        }
+    }
+
+    /**
+     * Relay a transaction that [createTxs] made without relaying, from its metadata.
+     *
+     * @param txMetadata is the metadata of the transaction, which a transaction of [createTxs] carries
+     * @return the hash of the relayed transaction
+     * @throws MoneroError if the wallet is closed, the metadata is not the metadata of a transaction, or the server
+     * refuses the transaction
+     */
+    fun relayTx(txMetadata: String): String {
+        return string { lib, h, out -> lib.monero_wallet_relay_tx(h, txMetadata, out) }
+    }
+
+    /**
+     * Relay a transaction that [createTxs] made without relaying, from the transaction itself, through its
+     * metadata.
+     *
+     * @param tx is the transaction to relay, which [createTxs] returned
+     * @return the hash of the relayed transaction
+     * @throws MoneroError if the wallet is closed, the transaction has no metadata, or the server refuses the
+     * transaction
+     */
+    fun relayTx(tx: MoneroTxWallet): String {
+        checkNotClosed()
+        val metadata = tx.metadata ?: throw MoneroError("The transaction has no metadata to relay")
+        return relayTx(metadata)
+    }
+
+    /**
+     * Sign the transactions that [createTxs] made without relaying, from the hex of their unsigned set. The wallet
+     * has to hold the spend key of its address, which a wallet that only reads does not have.
+     *
+     * @param unsignedTxHex is the hex of the unsigned set, which a transaction of [createTxs] carries
+     * @return the transactions of the signed set
+     * @throws MoneroError if the wallet is closed, the wallet has no spend key, or the hex is not the hex of an
+     * unsigned set
+     */
+    fun signTxs(unsignedTxHex: String): List<MoneroTxWallet> {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            val result = MoneroNative.txSetsResult(lib.monero_wallet_sign_txs(h, unsignedTxHex, out), out)
+            result.getTxs()
+        }
+    }
+
+    /**
+     * Submit the transactions that [signTxs] signed, from the hex of their signed set, which the server relays.
+     *
+     * @param signedTxHex is the hex of the signed set, which a transaction of [signTxs] carries
+     * @return the hashes of the submitted transactions
+     * @throws MoneroError if the wallet is closed, or the server refuses a transaction
+     */
+    fun submitTxs(signedTxHex: String): List<String> {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.strings(lib.monero_wallet_submit_txs(h, signedTxHex, out), out)
+        }
+    }
+
+    /**
+     * Get the number of candidate spends that the last sync could not verify, which is greater than zero only for a
+     * view-only wallet without imported key images. While it is not zero, the balances are the ones of the server,
+     * which the wallet can not refine.
+     *
+     * @return the number of unrefined spends
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getUnrefinedSpendCount(): Long {
+        checkNotClosed()
+        return run { lib, h ->
+            val count = LongByReference()
+            MoneroNative.ok(lib.monero_wallet_light_get_unrefined_spend_count(h, count))
+            // the count is a number of spends, which fits a long for any wallet: a negative read is a broken answer
+            if (count.value < 0) throw MoneroError("The wallet answered a spend count that does not fit a long")
+            count.value
+        }
+    }
+
+    /**
+     * Get the secret key of a transaction that the wallet built, which the wallet keeps when it builds one.
+     *
+     * @param txHash is the hash of the transaction
+     * @return the secret key of the transaction, which the c abi wipes when it frees the string
+     * @throws MoneroError if the wallet is closed, the hash is not valid, or the wallet did not keep a key of the
+     * transaction
+     */
+    fun getTxKey(txHash: String): String {
+        checkNotClosed()
+        return secret { lib, h, out -> lib.monero_wallet_get_tx_key(h, txHash, out) }
+    }
+
+    /**
+     * Check that a transaction paid an address, with the secret key of the transaction. A light wallet server does not
+     * carry the transactions of the chain, so the wallet checks the ones it built itself and refuses the rest.
+     *
+     * @param txHash is the hash of a transaction that the wallet built
+     * @param txKey is the secret key of the transaction
+     * @param address is the address that the transaction paid
+     * @return the result of the check: how much the address received, and whether the transaction is in the pool or how
+     * many confirmations it has. A key that is not the one of the transaction is not an error: the result says it is
+     * not good
+     * @throws MoneroError if the wallet is closed, the wallet did not build the transaction, or the hash, the key or
+     * the address is not valid
+     */
+    fun checkTxKey(txHash: String, txKey: String, address: String): MoneroCheckTx {
+        checkNotClosed()
+        return json { lib, h, out -> lib.monero_wallet_check_tx_key(h, txHash, txKey, address, out) }
+    }
+
+    /**
+     * Freeze an output, which the wallet does not spend while it stays frozen. The setting survives the syncs of the
+     * wallet.
+     *
+     * @param keyImage is the key image of the output to freeze
+     * @throws MoneroError if the wallet is closed, or it does not have the output of the key image
+     */
+    /**
+     * Export the signed key images of the wallet, which a wallet that only reads imports to know which of
+     * its outputs were spent. The signature of each one is made over the one-time key of the output it
+     * spends, which the server checks: a signature that the export made over another key never passes
+     * the check.
+     *
+     * @param all is true to export all the key images, and false to export the ones since the last export
+     * @return the key images, and the index of the first among the outputs of the wallet
+     * @throws MoneroError if the wallet is closed, or it is not connected to the server
+     */
+    fun exportKeyImages(all: Boolean): MoneroKeyImageExportResult {
+        checkNotClosed()
+        return json { lib, h, out -> lib.monero_wallet_export_key_images(h, all, out) }
+    }
+
+    /**
+     * Import the signed key images of the outputs of the wallet, which the wallet that holds the spend
+     * key exported, and check which of the outputs they spend. The wallet that only reads cannot sign
+     * them itself: without the import it cannot know its spent money, and its balance says that money
+     * it spent is still there.
+     *
+     * @param keyImages are the key images to import
+     * @param offset is the index of the first key image among the outputs of the wallet
+     * @return the height of the wallet, and the amounts that the key images spent and left unspent
+     * @throws MoneroError if the wallet is closed, the key images are not valid, or their signatures do
+     * not pass the check of the server
+     */
+    fun importKeyImages(keyImages: List<MoneroKeyImage>, offset: Long): MoneroKeyImageImportResult {
+        checkNotClosed()
+        return json { lib, h, out -> lib.monero_wallet_import_key_images(h, MoneroJson.serialize(keyImages), offset, out) }
+    }
+
+    fun freezeOutput(keyImage: String) {
+        checkNotClosed()
+        run { lib, h -> MoneroNative.ok(lib.monero_wallet_freeze_output(h, keyImage)) }
+    }
+
+    /**
+     * Thaw a frozen output, which the wallet spends again.
+     *
+     * @param keyImage is the key image of the output to thaw
+     * @throws MoneroError if the wallet is closed, or it does not have the output of the key image
+     */
+    fun thawOutput(keyImage: String) {
+        checkNotClosed()
+        run { lib, h -> MoneroNative.ok(lib.monero_wallet_thaw_output(h, keyImage)) }
+    }
+
+    /**
+     * Get whether an output is frozen.
+     *
+     * @param keyImage is the key image of the output
+     * @return true if the output of the key image is frozen
+     * @throws MoneroError if the wallet is closed, or it does not have the output of the key image
+     */
+    fun isOutputFrozen(keyImage: String): Boolean {
+        checkNotClosed()
+        return run { lib, h ->
+            val frozen = ByteByReference()
+            MoneroNative.ok(lib.monero_wallet_is_output_frozen(h, keyImage, frozen))
+            frozen.value.toInt() != 0
+        }
+    }
+
+    /**
+     * Scan the transactions of their hashes. A light wallet server does not carry the transactions of the chain: the
+     * call syncs the wallet when the list is empty, and refuses a list that names transactions.
+     *
+     * @param txHashes are the hashes of the transactions to scan, which must be empty
+     * @throws MoneroError if the wallet is closed, or the list names a transaction
+     */
+    fun scanTxs(txHashes: List<String>) {
+        checkNotClosed()
+        val hashes = txHashes.toTypedArray()
+        run { lib, h -> MoneroNative.ok(lib.monero_wallet_scan_txs(h, hashes, SizeT(hashes.size.toLong()))) }
+    }
+
+    // ------------------------------- STATE ----------------------------------
+
+    /**
+     * Get the network of the wallet.
+     *
+     * @return the network type
+     * @throws MoneroError if the wallet is closed
+     */
+    fun getNetworkType(): MoneroNetworkType {
+        checkNotClosed()
+        return run { lib, h ->
+            val networkType = IntByReference()
+            MoneroNative.ok(lib.monero_wallet_get_network_type(h, networkType))
+            val values = MoneroNetworkType.values()
+            if (networkType.value < 0 || networkType.value >= values.size) throw MoneroError("The wallet answered a network type that the library does not know: ${networkType.value}")
+            values[networkType.value]
+        }
+    }
+
+    /**
+     * Check if the wallet is view-only, which means it has no private spend key.
+     *
+     * @return true if the wallet is view-only, false otherwise
+     * @throws MoneroError if the wallet is closed
+     */
+    fun isViewOnly(): Boolean {
+        checkNotClosed()
+        return run { lib, h ->
+            val viewOnly = ByteByReference()
+            MoneroNative.ok(lib.monero_wallet_is_view_only(h, viewOnly))
+            viewOnly.value.toInt() != 0
+        }
+    }
+
+    /**
+     * Check if the wallet is closed.
+     *
+     * @return true if the wallet is closed, false otherwise
+     */
+    fun isClosed(): Boolean {
+        return closed
+    }
+
+    /**
+     * Close the wallet, without saving it, since a light wallet has no files: closing it with a save is an error, and
+     * the wallet stays open. A close marks the wallet closed at once, and the calls that are in flight when it runs
+     * finish first: the close waits behind them on the thread of the wallet's calls. Every call of a closed wallet
+     * fails with "Wallet is closed", except the ones that need no wallet, and closing it again does nothing.
+     *
+     * @param save is whether to save the wallet before closing it, which a light wallet does not support, so it
+     * has to be false
+     * @throws MoneroError if a save is asked for, which a light wallet does not support
+     */
+    @Synchronized
+    fun close(save: Boolean) {
+        if (closed) return
+        if (save) {
+            // a light wallet lives in memory: the c abi refuses the save and the wallet stays open, which leaves
+            // the flag false
+            run { lib, h -> MoneroNative.ok(lib.monero_wallet_close(h, save)) }
+            return
+        }
+
+        // the flag goes first, so the calls that start after it fail with the error and not on a freed handle. The
+        // close and the free run as one task that an interrupt of this thread cannot cancel, behind the calls that
+        // are in flight: a close or a free that the queue drops leaves the wallet and its keys in memory with no
+        // handle, which a retry of the close does not reach since the flag is set
+        closed = true
+        worker.runFinal {
+            try {
+                MoneroNative.ok(MoneroNative.lib.monero_wallet_close(handle, save))
+            } finally {
+                MoneroNative.lib.monero_wallet_free(handle)
+            }
+        }
+    }
+
+    override fun close() {
+        close(false)
+    }
+
+    // ------------------------------- PRIVATE ------------------------------------
+
+    private fun checkNotClosed() {
+        if (closed) throw MoneroError("Wallet is closed")
+    }
+
+    private fun <T> run(call: (MoneroC, Pointer) -> T): T {
+        return worker.call {
+            // the flag is read again on the thread of the calls, where it was written before the task that frees
+            // the handle was queued: a call that reaches the queue behind the free fails here, and does not run
+            // on the freed handle
+            checkNotClosed()
+            call(MoneroNative.lib, handle)
+        }
+    }
+
+    private inline fun <reified T> json(crossinline call: (MoneroC, Pointer, PointerByReference) -> Int): T {
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.json(call(lib, h, out), out, object : TypeReference<T>() {})
+        }
+    }
+
+    private fun string(call: (MoneroC, Pointer, PointerByReference) -> Int): String {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.text(call(lib, h, out), out) ?: throw MoneroError("monero-c returned no string")
+        }
+    }
+
+    /**
+     * Call the c abi for a secret of the wallet, which it wipes when it frees the string: the seed and the private
+     * keys.
+     */
+    private fun secret(call: (MoneroC, Pointer, PointerByReference) -> Int): String {
+        checkNotClosed()
+        return run { lib, h ->
+            val out = PointerByReference()
+            MoneroNative.secret(call(lib, h, out), out) ?: throw MoneroError("monero-c returned no string")
+        }
+    }
+
+    companion object {
+
+        /**
+         * The language that a wallet writes its seed in when none is given.
+         */
+        const val DEFAULT_LANGUAGE = "English"
+
+        /**
+         * Create a light wallet, which registers the address with the server. A config with a seed restores the
+         * wallet from the seed, a config with its keys restores it from them, and a config with neither creates a
+         * wallet with a new random seed. A wallet that the server has is not created again.
+         *
+         * @param config is the configuration of the wallet, which needs its network type and the keys or the seed to
+         * restore, and can give the restore height and name the language of the seed
+         * @param connection is the connection to the light wallet server
+         * @return the new wallet
+         * @throws MoneroError if the configuration is invalid, or the server already has the wallet
+         */
+        fun createWallet(config: MoneroWalletConfig, connection: MoneroRpcConnection): MoneroWalletLight {
+            requireNetworkType(config)
+            return wallet(config, connection) { lib, json, conn, out -> lib.monero_wallet_light_create(json, conn, out) }
+        }
+
+        /**
+         * Open a light wallet from its light wallet server, which the server has to have: a config with a seed
+         * restores the wallet from the seed, a config with its keys restores it from them, and a config with neither
+         * fails. The wallet lives in memory, so supply the restore height of its first scan, which no file keeps.
+         *
+         * @param config is the configuration of the wallet, which needs its network type and the keys or the seed to
+         * restore
+         * @param connection is the connection to the light wallet server
+         * @return the opened wallet
+         * @throws MoneroError if the configuration is invalid, or the server does not have the wallet
+         */
+        fun openWallet(config: MoneroWalletConfig, connection: MoneroRpcConnection): MoneroWalletLight {
+            requireNetworkType(config)
+            return wallet(config, connection) { lib, json, conn, out -> lib.monero_wallet_light_open(json, conn, out) }
+        }
+
+        /**
+         * Check if a light wallet server has a wallet. The config needs a seed, or the primary address and the
+         * private view key, and a seed is read as the address and the view key that it gives. A wallet that the
+         * server does not have is not an error.
+         *
+         * @param config is the configuration of the wallet to look for
+         * @param connection is the connection to the light wallet server
+         * @return true if the server has the wallet, false otherwise
+         * @throws MoneroError if the configuration is invalid, or the server does not answer
+         */
+        fun walletExists(config: MoneroWalletConfig, connection: MoneroRpcConnection): Boolean {
+            requireNetworkType(config)
+            val lib = MoneroNative.lib
+            val conn = PointerByReference()
+            MoneroNative.ok(lib.monero_rpc_connection_create(MoneroJson.serialize(connection), conn))
+            try {
+                val exists = ByteByReference()
+                MoneroNative.ok(lib.monero_wallet_light_wallet_exists(MoneroJson.serialize(config), conn.value, exists))
+                return exists.value.toInt() != 0
+            } finally {
+                lib.monero_rpc_connection_free(conn.value)
+            }
+        }
+
+        /**
+         * Read the transactions that a relay of a light wallet already sent, from the error it threw when a later one
+         * failed. A relay and a sweep throw an error that names the transactions that reached the server before the
+         * failure, which no list the call returns names: the transactions are on the network and the wallet tracks
+         * them, and the caller that rebuilds learns from this what it must not send again.
+         *
+         * @param error is the error that a call of [MoneroWalletLight.relayTx], [MoneroWalletLight.submitTxs] or a
+         * sweep of a light wallet threw
+         * @return the hashes of the transactions that the server took, which is empty when the error names none
+         */
+        fun relayedHashes(error: MoneroError): List<String> {
+            val message = error.message ?: return emptyList()
+            val segment = message.substringAfter("already relayed: ", "").substringBefore("; ")
+            if (segment.isEmpty() || segment == message) return emptyList()
+            return segment.split(", ").filter { hash -> hash.length == 64 && hash.all { it.isDigit() || it in 'a'..'f' } }
+        }
+
+        private fun requireNetworkType(config: MoneroWalletConfig) {
+            if (config.networkType == null) throw MoneroError("Must provide wallet network type")
+        }
+
+        // the connection handle is only read by the call, which the C ABI documents, so it is freed right after it
+        private fun wallet(config: MoneroWalletConfig, connection: MoneroRpcConnection, call: (MoneroC, String, Pointer, PointerByReference) -> Int): MoneroWalletLight {
+            val lib = MoneroNative.lib
+            val json = MoneroJson.serialize(config)
+            val conn = PointerByReference()
+            MoneroNative.ok(lib.monero_rpc_connection_create(MoneroJson.serialize(connection), conn))
+            val out = PointerByReference()
+            try {
+                MoneroNative.ok(call(lib, json, conn.value, out))
+            } finally {
+                lib.monero_rpc_connection_free(conn.value)
+            }
+            return MoneroWalletLight(out.value)
+        }
+    }
+}

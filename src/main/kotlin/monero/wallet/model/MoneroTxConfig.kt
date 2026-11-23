@@ -14,7 +14,8 @@ class MoneroTxConfig {
     var priority: MoneroTxPriority? = null
     // monero-cpp ignores it, and the network decides it
     var ringSize: Int? = null
-    // the wallet decides it when it is not set
+    // the priority of the transaction decides the fee: the c abi reads this one, and the wallet of a light server
+    // takes the one of the priority whatever it is
     var fee: BigInteger? = null
     var accountIndex: Int? = null
     var subaddressIndices: List<Int>? = null

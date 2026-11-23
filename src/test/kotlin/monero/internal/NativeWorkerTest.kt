@@ -61,6 +61,43 @@ class NativeWorkerTest {
         call.get(10, TimeUnit.SECONDS)
     }
 
+    // the last task of a worker releases what its owner holds, and a queue entry that an interrupt of the
+    // caller cancels would leak it: the final task runs whatever interrupts come
+    @Test
+    fun testRunFinalRunsTheTaskThroughAnInterrupt() {
+        val worker = NativeWorker("test", "The test is closed")
+        val started = CountDownLatch(1)
+        val ran = AtomicBoolean(false)
+        val call = CompletableFuture.runAsync {
+            worker.call {
+                started.countDown()
+                Thread.sleep(800)
+            }
+        }
+        started.await()
+
+        val closer = Thread {
+            worker.runFinal { ran.set(true) }
+        }
+        closer.start()
+        Thread.sleep(100)   // the closer is in the wait by now
+        closer.interrupt()
+        closer.join(10000)
+        assertEquals(false, closer.isAlive, "the runFinal did not return")
+
+        // the final task ran behind the call, and the interrupt is still on the thread that closed
+        assertEquals(true, ran.get())
+        assertEquals(true, closer.isInterrupted)
+        call.get(10, TimeUnit.SECONDS)
+    }
+
+    @Test
+    fun testRunFinalThrowsTheErrorOfTheTask() {
+        val worker = NativeWorker("test", "The test is closed")
+        val error = assertThrows(MoneroError::class.java) { worker.runFinal { throw MoneroError("it failed") } }
+        assertEquals("it failed", error.message)
+    }
+
     // the worker runs one call at a time, so a call that waits on a call of its own worker would wait
     // on itself forever
     @Test

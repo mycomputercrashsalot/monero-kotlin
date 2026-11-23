@@ -1,0 +1,64 @@
+# regtest monerod and monero-lws for the integration tests of the lws models. monerod is the image of the
+# monero project itself with the zmq of the lws daemon on; monero-lws is pinned to the commit that
+# the captured responses of the tests come from, so what it answers is what the tests expect. the lws database lives in
+# the container: docker compose down makes the next up a fresh one, which the tests need, since they assert the
+# responses of an account that no block was mined to yet
+#
+# on a slow docker host (an amd64 image under emulation) start the node first and give its core the
+# time to come up before the lws starts: an lws that syncs against a node that is still initializing locks
+# a chain height of its own estimate and never scans. `docker compose up -d node`, wait for
+# `curl http://127.0.0.1:18081/get_height` to answer, then `docker compose up -d lws`.
+services:
+
+  node:
+    image: lalanza808/monero:v0.18.5.1
+    container_name: monero_kotlin_lws_node
+    # --fixed-difficulty: otherwise the difficulty grows about 10x per block, and generateblocks times out
+    command: [
+      "monerod",
+      "--regtest",
+      "--offline",
+      "--fixed-difficulty=1",
+      "--non-interactive",
+      "--log-level=0",
+      "--hide-my-port",
+      "--zmq-rpc-bind-ip=0.0.0.0",
+      "--zmq-rpc-bind-port=18082",
+      "--zmq-pub=tcp://0.0.0.0:18083",
+      "--confirm-zmq-rpc-external-bind",
+      "--rpc-bind-ip=0.0.0.0",
+      "--rpc-bind-port=18081",
+      "--rpc-access-control-origins=*",
+      "--rpc-ssl=disabled",
+      "--disable-rpc-ban",
+      "--confirm-external-bind"
+    ]
+    ports:
+      - "18081:18081"
+    restart: "no"
+
+  lws:
+    image: ghcr.io/vtnerd/monero-lws:amd64-52cf3fe54b2ddf15351ed7b6d62880edc6c603e8
+    container_name: monero_kotlin_lws
+    # --auto-accept-creation: no admin run of monero-lws-admin is needed to accept the account of /login.
+    # --auto-accept-import: creating a light wallet for an address the server does not have asks the server to import
+    # it, which an admin also has to accept. the rest server binds 0.0.0.0 so the port is reachable from outside the
+    # container, which needs --confirm-external-bind
+    # --max-subaddresses: the scanner does not scan subaddresses at the default of 0, so a payment to a derived one
+    # confirms on the chain but the server never credits it, and /upsert_subaddrs answers that the max was exceeded
+    command: [
+      "--daemon=tcp://node:18082",
+      "--sub=tcp://node:18083",
+      "--rest-server=http://0.0.0.0:8443",
+      "--regtest",
+      "--auto-accept-creation",
+      "--auto-accept-import",
+      "--max-subaddresses=50",
+      "--log-level=4",
+      "--confirm-external-bind"
+    ]
+    ports:
+      - "8443:8443"
+    depends_on:
+      - node
+    restart: "no"

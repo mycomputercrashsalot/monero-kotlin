@@ -63,6 +63,18 @@ The tests log what they run, the way the tests of monero-python do: to the conso
 
 Gradle shows the console log of each test with its result, and the console launcher of the CI shows it too, with the files in the results that it uploads.
 
+## Light wallet tests
+
+The light wallet tests need monero-c with the light wallet surface and a regtest node with a monero-lws server, which is the [docker-compose.yml](../src/test/integration/docker-compose.yml) of the integration tests:
+
+```sh
+docker compose -f src/test/integration/docker-compose.yml up -d
+MONERO_C_LIBRARY=/path/to/monero-kotlin/external/monero-c/build/libmonero_c.so ./gradlew integrationTest --rerun
+docker compose -f src/test/integration/docker-compose.yml down -v
+```
+
+The node is expected at `http://127.0.0.1:18081`: set the environment variable `MONERO_C_TEST_DAEMON_URI` for another one. The monero-lws server is expected at `http://127.0.0.1:8443`: set the environment variable `MONERO_KOTLIN_TEST_LWS_URI` for another one. The light wallet tests need a monero-c with the light wallet surface, which the submodule does not have yet: they skip with a message when the library has no light wallet.
+
 ## Coverage
 
 ```sh

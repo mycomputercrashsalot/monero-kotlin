@@ -26,6 +26,30 @@ object MoneroUtils {
     private fun network(networkType: MoneroNetworkType): Int = networkType.ordinal
 
     /**
+     * Refuse the parts of a transaction configuration that the c abi cannot carry or that no destination can hold,
+     * before they cross it: a negative amount crosses as a number that wraps around to almost 2^64, and one at or
+     * above 2^64 does not cross at all, which the wallet would answer with an error about its money instead of the
+     * amount.
+     *
+     * @param config is the configuration of the transaction to validate
+     * @throws MoneroError if an amount is negative or at or above 2^64, a destination names the amount zero, or an
+     * index is negative
+     */
+    fun validateTxConfig(config: monero.wallet.model.MoneroTxConfig) {
+        for (amount in listOfNotNull(config.fee, config.belowAmount) + config.destinations.orEmpty().mapNotNull { it.amount }) {
+            if (amount.signum() < 0) throw MoneroError("The amount $amount of the config of the transaction is negative")
+            if (amount.bitLength() > 64) throw MoneroError("The amount $amount of the config of the transaction is at or above 2^64")
+        }
+        for (destination in config.destinations.orEmpty()) {
+            val amount = destination.amount ?: continue
+            if (amount.signum() == 0) throw MoneroError("The destination of the amount zero is not a transfer")
+        }
+        for (index in listOfNotNull(config.accountIndex) + config.subaddressIndices.orEmpty() + config.subtractFeeFrom.orEmpty()) {
+            if (index < 0) throw MoneroError("The index $index of the config of the transaction is negative")
+        }
+    }
+
+    /**
      * Convert XMR to atomic units. 1 XMR is 10^12 atomic units, and the amount is rounded to the nearest one.
      *
      * @param amountXmr is the amount in XMR to convert

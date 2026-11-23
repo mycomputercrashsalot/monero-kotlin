@@ -618,6 +618,14 @@ internal interface MoneroC : Library {
     fun monero_wallet_delete_address_book_entry(wallet: Pointer, index: Long): Int
 
     fun monero_wallet_get_address_book_entries(wallet: Pointer, indices: LongArray?, numIndices: SizeT, json: PointerByReference): Int
+    // wallet: light
+    fun monero_wallet_light_create(configJson: String, connection: Pointer, out: PointerByReference): Int
+
+    fun monero_wallet_light_open(configJson: String, connection: Pointer, out: PointerByReference): Int
+
+    fun monero_wallet_light_wallet_exists(configJson: String, connection: Pointer, exists: ByteByReference): Int
+
+    fun monero_wallet_light_get_unrefined_spend_count(wallet: Pointer, count: LongByReference): Int
 }
 
 /**

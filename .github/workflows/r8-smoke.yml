@@ -1,0 +1,147 @@
+# Runs the runtime smoke of the minified library: the classes that Build made are minified with the consumer rules of the android module,
+# the rules that an app that turns on minification gets, and a harness opens a light wallet, mines the blocks that pay it, syncs it, and
+# reads its money and its history through every surface that minification can break. The nodes are the ones of the compose of the light
+# wallet tests, which the smoke reuses
+name: R8 smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'donate.png'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'donate.png'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: r8-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wait-build:
+    name: Pending
+    runs-on: ubuntu-24.04
+    # what it waits for is the Build run and the Native run, which downloads the library
+    timeout-minutes: 60
+
+    outputs:
+      build-run-id: ${{ steps.build.outputs.run-id }}
+      native-run-id: ${{ steps.native.outputs.run-id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Wait for the Build run of this commit
+        id: build
+        uses: ./.github/actions/wait-for-run
+        with:
+          workflow: build.yml
+          artifacts: monero-kotlin-tests
+
+      - name: Wait for the Native run of this commit
+        id: native
+        uses: ./.github/actions/wait-for-run
+        with:
+          workflow: native.yml
+          artifacts: monero-c-linux-x86_64
+
+  r8-smoke:
+    name: R8 smoke, Linux x86_64 (regtest node and monero-lws)
+    needs: wait-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      MONERO_C_TEST_DAEMON_URI: http://127.0.0.1:18081
+      LWS_URI: http://127.0.0.1:8443
+      COMPOSE_FILE: src/test/integration/docker-compose.yml
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Download the tests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: monero-kotlin-tests
+          path: unit-tests
+          run-id: ${{ needs.wait-build.outputs.build-run-id }}
+          github-token: ${{ github.token }}
+
+      # the library, with the libusb that it needs next to it
+      - name: Download monero-c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: monero-c-linux-x86_64
+          path: monero-c
+          run-id: ${{ needs.wait-build.outputs.native-run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Set the library of monero-c
+        run: |
+          if [ ! -f monero-c/libmonero_c.so ]; then echo "the build of monero-c has no libmonero_c.so"; ls monero-c; exit 1; fi
+          ldd_out=$(ldd monero-c/libmonero_c.so || true)
+          if grep -q 'not found' <<< "$ldd_out"; then
+            echo "$ldd_out"
+            echo "missing runtime libraries above"; exit 1
+          fi
+          echo "MONERO_C_LIBRARY=$PWD/monero-c/libmonero_c.so" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # the node starts alone first: an lws that starts against a node that is still initializing locks a wrong
+      # chain height and never scans, which the header of the compose file says too
+      - name: Start the regtest monerod
+        run: docker compose up -d node
+
+      - name: Wait for monerod
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -m 5 -X POST "$MONERO_C_TEST_DAEMON_URI/json_rpc" -d '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}' | grep -q '"count"'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "monerod did not answer"; exit 1
+
+      - name: Start the monero-lws
+        run: docker compose up -d lws
+
+      # monero-lws answers only after it has scanned the chain of the node, which takes about a minute after it starts
+      - name: Wait for monero-lws
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS -m 5 -X POST "$LWS_URI/get_version" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "monero-lws did not answer"; exit 1
+
+      # the jar of the classes that Build made, which is the library the smoke minifies
+      - name: Jar the library of the Build run
+        run: jar cf monero-kotlin.jar -C unit-tests/classes/main .
+
+      - name: Run the smoke of the minified library
+        run: android/r8-smoke/run.sh "$PWD/monero-kotlin.jar"
