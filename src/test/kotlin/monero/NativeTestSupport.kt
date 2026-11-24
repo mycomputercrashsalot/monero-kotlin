@@ -1,5 +1,6 @@
 package monero
 
+import com.sun.jna.NativeLibrary
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -34,6 +35,22 @@ object NativeTestSupport {
     }
 
     /**
+     * The light wallet surface of the library of monero-c, which not every build of it has. Not every build of it has the four functions of the
+     * light wallet: the submodule pins the fork of monero-c that carries them, but a library of the environment
+     * can point elsewhere, so a test that calls them skips when it does not have them.
+     */
+    val isLightWalletAvailable: Boolean by lazy {
+        if (!isAvailable) false
+        else try {
+            val path = System.getProperty(MoneroNative.LIBRARY_PROPERTY) ?: System.getenv(MoneroNative.LIBRARY_ENVIRONMENT) ?: "monero_c"
+            NativeLibrary.getInstance(path).getFunction("monero_wallet_light_create")
+            true
+        } catch (e: UnsatisfiedLinkError) {
+            false
+        }
+    }
+
+    /**
      * Skip the test if monero-c can not be loaded.
      */
     fun assumeAvailable() {
@@ -51,5 +68,12 @@ object NativeTestSupport {
         val categories = System.getenv(LOG_CATEGORIES_ENVIRONMENT)
         if (categories != null) MoneroUtils.setLogCategories(categories)
         else MoneroUtils.setLogLevel(System.getenv(LOG_LEVEL_ENVIRONMENT)?.toInt() ?: 0)
+    }
+
+    /**
+     * Skip the test if the library of monero-c has no light wallet surface.
+     */
+    fun assumeLightWalletAvailable() {
+        assumeTrue(isLightWalletAvailable, "the library of monero-c has no light wallet: the tests that call it need a monero-c with the light wallet surface")
     }
 }

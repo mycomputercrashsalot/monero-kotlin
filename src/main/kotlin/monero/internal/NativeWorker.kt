@@ -1,9 +1,12 @@
 package monero.internal
 
 import java.util.concurrent.Callable
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import monero.common.MoneroError
 
@@ -16,9 +19,10 @@ import monero.common.MoneroError
  */
 internal class NativeWorker(name: String, private val closedMessage: String) : AutoCloseable {
 
-    private var thread: Thread? = null
+    @Volatile private var thread: Thread? = null
 
-    private val executor = Executors.newSingleThreadExecutor { task ->
+    // the pool is taken raw, since the close needs its queue: the wrapper of newSingleThreadExecutor hides it
+    private val executor = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue()) { task ->
         Thread(null, task, name, STACK_SIZE).apply {
             isDaemon = true
             thread = this
@@ -44,11 +48,33 @@ internal class NativeWorker(name: String, private val closedMessage: String) : A
             return future.get()
         } catch (e: ExecutionException) {
             throw e.cause ?: e
+        } catch (e: CancellationException) {
+            // a call whose task the close dropped from the queue, which only a lost worker thread leaves
+            // behind, reads as the closed message and not as a framework error
+            throw MoneroError(closedMessage, e)
         } catch (e: InterruptedException) {
             future.cancel(false)
             Thread.currentThread().interrupt()
             throw MoneroError("Interrupted while waiting for monero-c", e)
         }
+    }
+
+    /**
+     * Run the last task of the worker and stop the thread after it, waiting for it whatever interrupts come: the
+     * task releases what its owner holds, and a queue entry that an interrupt of the caller cancels would leak it.
+     */
+    fun runFinal(task: () -> Unit) {
+        val failure = arrayOfNulls<Throwable>(1)
+        executor.execute {
+            try {
+                task()
+            } catch (t: Throwable) {
+                failure[0] = t
+            }
+        }
+        close()
+        val error = failure[0]
+        if (error != null) throw error
     }
 
     /**
@@ -61,11 +87,21 @@ internal class NativeWorker(name: String, private val closedMessage: String) : A
         executor.shutdown()
         var interrupted = false
         while (!executor.isTerminated) {
-            try {
-                // unbounded, since the calls of a worker end and freeing the handle under one of them does not
-                executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)
-            } catch (e: InterruptedException) {
-                interrupted = true
+            // a pool that lost its only thread with tasks still queued never terminates on its own, and the
+            // calls that wait on the queued tasks wait with it: the queue is dropped when that happens, which
+            // those calls read as the message of the close
+            val worker = thread
+            if (worker != null && !worker.isAlive && !executor.queue.isEmpty()) {
+                for (task in executor.shutdownNow()) {
+                    if (task is Future<*>) task.cancel(false)
+                }
+            } else {
+                try {
+                    // bounded, so the state above is looked for while the last calls end
+                    executor.awaitTermination(50, TimeUnit.MILLISECONDS)
+                } catch (e: InterruptedException) {
+                    interrupted = true
+                }
             }
         }
         if (interrupted) Thread.currentThread().interrupt()

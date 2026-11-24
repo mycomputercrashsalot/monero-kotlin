@@ -1,7 +1,8 @@
 name: Codacy Coverage Reporter
 
 # Unit tests and Integration tests each upload the coverage of their tests, and Codacy merges the reports that it gets with one command: a line that
-# both cover counts once. The two end at different times, so the end of each one starts this, and the one that finds the other ended sends both
+# any of them covers counts once. The integration run carries two reports, the one of its main job and the one of the light wallet job, and the runs
+# end at different times, so the end of each one starts this, and the one that finds the others ended sends all
 on:
   workflow_run:
     workflows:
@@ -76,6 +77,19 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ steps.runs.outputs.integration-run-id }}
 
+      # the light wallet surface is covered only by the light integration tests, which run in their own job of the
+      # run of the integration tests and carry their own report
+      - name: Download the coverage of the light integration tests
+        id: light
+        if: steps.runs.outputs.ready == 'true' && steps.runs.outputs.integration-run-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: light-coverage-reports
+          path: coverage-reports/light
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.runs.outputs.integration-run-id }}
+
       # the report of JaCoCo has the paths of the classes, e.g. monero/daemon/MoneroDaemonRpc.kt, and the sources are in src/main/kotlin/. The
       # reports that there are go in one command, so that Codacy merges them: with only one of them the coverage is lower, and the notice says it
       - name: Report Kotlin coverage
@@ -89,7 +103,7 @@ jobs:
             exit 0
           fi
           reports=()
-          for kind in unit integration; do
+          for kind in unit integration light; do
             if [ -f "coverage-reports/$kind/jacocoTestReport.xml" ]; then
               reports+=(-r "coverage-reports/$kind/jacocoTestReport.xml")
             else

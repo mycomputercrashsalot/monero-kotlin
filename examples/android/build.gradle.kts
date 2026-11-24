@@ -32,6 +32,17 @@ android {
         buildConfig = true
     }
 
+    // the release of the example minifies the way an app of the store does, which is the only build that runs the
+    // rules of the AAR: the interface, the callbacks and the structures of the bridge, and the fields of the models
+    // that cross the abi, must all survive it
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

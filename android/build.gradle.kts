@@ -115,7 +115,13 @@ val stageMoneroC by tasks.registering(Sync::class) {
     // and, at offset 18, the machine; the exported names are in the strings of the file, which ISO_8859_1 reads one byte to one char
     doLast {
         val machines = mapOf("arm64-v8a" to 0xB7, "x86_64" to 0x3E)
-        for (abi in destinationDir.listFiles { file -> file.isDirectory }.orEmpty()) {
+        val abis = destinationDir.listFiles { file -> file.isDirectory }.orEmpty()
+        // the path of the native library is read at configuration time to pick the source of the Sync, so a folder that an
+        // archive replaces before the task runs stages nothing and this loop below would have nothing to check
+        if (abis.isEmpty()) {
+            throw GradleException("monero-c staged no ${machines.keys.joinToString()} library in ${destinationDir}")
+        }
+        for (abi in abis) {
             val machine = machines[abi.name]
                 ?: throw GradleException("monero-c is built for ${machines.keys.joinToString()}, and ${abi.name} is none of them")
             val library = File(abi, "libmonero_c.so")

@@ -34,7 +34,9 @@ dependencies {
 ```
 
 The library loads on Android unchanged: `MoneroNative` asks JNA for `monero_c`, and JNA finds it in the `lib/<abi>` of the app, where the
-AAR put it. An app that minifies gets the rules that JNA needs from the AAR.
+AAR put it. An app that minifies gets the rules that the bridge needs from the AAR: JNA reads the interface, the callbacks and the
+structures through reflection, and the models cross the native ABI as JSON through the names of their fields, which minification renames
+when the rules do not keep them.
 
 An app that bundles its own `libmonero_c.so` next to the AAR meets a duplicate file when the native libraries are merged, which its
 packaging resolves:

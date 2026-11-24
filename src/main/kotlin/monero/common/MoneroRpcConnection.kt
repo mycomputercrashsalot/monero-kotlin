@@ -260,15 +260,25 @@ open class MoneroRpcConnection : AutoCloseable {
     }
 
     // the handle for the current configuration is made under the write lock, and used under the read lock, so the calls
-    // of several threads run together and close() waits for them
+    // of several threads run together and close() waits for them. The call runs under the read lock on the way that
+    // makes the handle too: a call that a server keeps for the whole of its timeout does not hold the write lock and
+    // every call of every other thread behind it, which is the one slow answer that the connection is remembered by
     private fun <T> withHandle(call: (MoneroC, Pointer) -> T): T {
         val lib = MoneroNative.lib
         handleLock.read {
             val h = handle
             if (h != null && handleConfiguration == configuration()) return call(lib, h)
         }
-        handleLock.write {
-            return call(lib, ensureHandle(lib))
+        var attempts = 0
+        while (true) {
+            handleLock.write { ensureHandle(lib) }
+            handleLock.read {
+                val h = handle
+                if (h != null && handleConfiguration == configuration()) return call(lib, h)
+            }
+            // the configuration changed again while the handle was made, which only a caller that changes it with
+            // every call does: after a few of those, run the call the way that cannot miss, under the write lock
+            if (++attempts >= 3) return handleLock.write { call(lib, ensureHandle(lib)) }
         }
     }
 
